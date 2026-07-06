@@ -4,16 +4,18 @@
 
 #include "Shared.xcconfig"
 
-PRODUCT_BUNDLE_IDENTIFIER = dev.cmux.app.beta
-DEVELOPMENT_TEAM = 7WLXT3NR37
+PRODUCT_BUNDLE_IDENTIFIER = com.imuxterm.ios
+DEVELOPMENT_TEAM = CH63V3XD76
 
 // Distinguish the TestFlight beta on-device from a future App Store "cmux"
 // (overrides PRODUCT_DISPLAY_NAME = cmux from Shared.xcconfig). Debug stays "cmux".
-PRODUCT_DISPLAY_NAME = cmux BETA
+PRODUCT_DISPLAY_NAME = iMux
 
 // TestFlight/App Store builds use production APNs. Debug keeps
 // Config/cmux.entitlements from Shared.xcconfig.
-CODE_SIGN_ENTITLEMENTS = Config/cmux-release.entitlements
+// iMux fork: self-distributed TestFlight has no APNs key on this team and no
+// Sign in with Apple config, so ship without those entitlements (empty file).
+CODE_SIGN_ENTITLEMENTS = Config/imux-release.entitlements
 
 // Release (TestFlight beta + App Store) pairing scheme. Dev builds register
 // cmux-ios-dev instead, so the Camera app routes each channel's QR to the
