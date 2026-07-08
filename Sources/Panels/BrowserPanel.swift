@@ -1037,6 +1037,7 @@ private let browserEmbeddedNavigationSchemes: Set<String> = [
     "applewebdata",
     "blob",
     "cmux-diff-viewer",
+    "cmux-panel",
     "data",
     "file",
     "http",
@@ -3661,6 +3662,15 @@ final class BrowserPanel: Panel, ObservableObject {
         // The handler itself rejects every frame that is not a registered diff
         // viewer session, so installing it on all browser webviews is safe.
         DiffCommentsBridge.installIfNeeded(on: configuration.userContentController)
+        if configuration.urlSchemeHandler(forURLScheme: PanelPromptURLSchemeHandler.scheme) == nil {
+            configuration.setURLSchemeHandler(
+                PanelPromptURLSchemeHandler.shared,
+                forURLScheme: PanelPromptURLSchemeHandler.scheme
+            )
+        }
+        // Interactive panel submit/cancel bridge; rejects every frame that is
+        // not an active cmux-panel session, so blanket install is safe.
+        PanelPromptBridge.installIfNeeded(on: configuration.userContentController)
 
         // Enable developer extras (DevTools)
         configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
@@ -4800,6 +4810,12 @@ final class BrowserPanel: Panel, ObservableObject {
                 token: components.token,
                 requestPath: components.requestPath
             )
+        }
+        // Interactive panel sessions die with their pending RPC; a restored
+        // panel page could never init or submit, so never persist one.
+        if PanelPromptURLSchemeHandler.token(from: webView.url) != nil
+            || PanelPromptURLSchemeHandler.token(from: currentURL) != nil {
+            return false
         }
         guard !Self.isTemporarySessionHistoryURL(webView.url),
               !Self.isTemporarySessionHistoryURL(currentURL),

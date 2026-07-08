@@ -79,6 +79,10 @@ public enum ControlCommandExecutionPolicy: Sendable, Equatable {
         "feed.question.reply",
         "feed.exit_plan.reply",
         "browser.download.wait",
+        // `panel.prompt` parks its socket-worker thread until the interactive
+        // panel page submits/cancels (or the wait times out); on the main
+        // actor that would freeze the app for the full wait.
+        "panel.prompt",
         "browser.profiles.list",
         "browser.profiles.create",
         "browser.profiles.rename",

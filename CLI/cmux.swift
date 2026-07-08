@@ -5039,6 +5039,10 @@ struct CMUXCLI {
         case "markdown":
             try runMarkdownCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
+        // Interactive panel commands
+        case "panel":
+            try runPanelCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
         default:
             throw unknownCommandError(command)
         }
@@ -5204,6 +5208,108 @@ struct CMUXCLI {
             let paneText = formatHandle(payload, kind: "pane", idFormat: idFormat) ?? "unknown"
             let filePath = (payload["path"] as? String) ?? absolutePath
             print("OK surface=\(surfaceText) pane=\(paneText) path=\(filePath)")
+        }
+    }
+
+    // MARK: - Panel Commands
+
+    /// `cmux panel prompt <spec.json|->` — opens an interactive panel in a
+    /// browser split and blocks until the user submits or cancels (or the
+    /// timeout elapses). On submit, prints the edited value JSON to stdout.
+    private func runPanelCommand(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat
+    ) throws {
+        var args = commandArgs
+        let (workspaceOpt, argsAfterWorkspace) = parseOption(args, name: "--workspace")
+        let (windowOpt, argsAfterWindow) = parseOption(argsAfterWorkspace, name: "--window")
+        let (surfaceOpt, argsAfterSurface) = parseOption(argsAfterWindow, name: "--surface")
+        let (focusOpt, argsAfterFocus) = parseOption(argsAfterSurface, name: "--focus")
+        let (titleOpt, argsAfterTitle) = parseOption(argsAfterFocus, name: "--title")
+        let (timeoutOpt, argsAfterTimeout) = parseOption(argsAfterTitle, name: "--timeout")
+        args = argsAfterTimeout
+
+        let usage = "Usage: cmux panel prompt <spec.json|-> [--title <text>] [--timeout <seconds>] [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>] [--focus <true|false>]"
+        guard let subcommand = args.first, subcommand.lowercased() == "prompt" else {
+            throw CLIError(message: "Unknown panel subcommand '\(args.first ?? "")'. \(usage)")
+        }
+        let positional = Array(args.dropFirst())
+        if let unknownFlag = positional.first(where: { $0.hasPrefix("-") && $0 != "-" }) {
+            throw CLIError(message: "panel prompt: unknown flag '\(unknownFlag)'. \(usage)")
+        }
+        guard positional.count == 1, let specArg = positional.first else {
+            throw CLIError(message: "panel prompt requires exactly one spec argument (a JSON file path or '-' for stdin). \(usage)")
+        }
+
+        let specData: Data
+        if specArg == "-" {
+            specData = FileHandle.standardInput.readDataToEndOfFile()
+        } else {
+            let specPath = resolvePath(specArg)
+            guard let fileData = FileManager.default.contents(atPath: specPath) else {
+                throw CLIError(message: "panel prompt: cannot read spec file: \(specPath)")
+            }
+            specData = fileData
+        }
+        guard let specObject = try? JSONSerialization.jsonObject(with: specData),
+              let spec = specObject as? [String: Any] else {
+            throw CLIError(message: "panel prompt: spec must be a JSON object")
+        }
+
+        let timeoutSeconds: Int
+        if let timeoutOpt {
+            guard let parsed = Int(timeoutOpt.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  (1...86400).contains(parsed) else {
+                throw CLIError(message: "--timeout must be an integer between 1 and 86400 seconds")
+            }
+            timeoutSeconds = parsed
+        } else {
+            timeoutSeconds = 3600
+        }
+
+        var params: [String: Any] = ["spec": spec, "timeout_seconds": timeoutSeconds]
+        if let titleOpt {
+            params["title"] = titleOpt
+        }
+        if let surfaceRaw = surfaceOpt {
+            if let surface = try normalizeSurfaceHandle(surfaceRaw, client: client) {
+                params["surface_id"] = surface
+            }
+        }
+        let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+        if let workspaceRaw {
+            if let workspace = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
+                params["workspace_id"] = workspace
+            }
+        }
+        if let windowRaw = windowOpt {
+            if let window = try normalizeWindowHandle(windowRaw, client: client) {
+                params["window_id"] = window
+            }
+        }
+        try applyFocusOption(focusOpt, defaultValue: true, to: &params)
+
+        let payload = try client.sendV2(
+            method: "panel.prompt",
+            params: params,
+            responseTimeout: TimeInterval(timeoutSeconds) + 30
+        )
+
+        if jsonOutput {
+            print(jsonString(formatIDs(payload, mode: idFormat)))
+            return
+        }
+        switch (payload["status"] as? String) ?? "unknown" {
+        case "submitted":
+            print(jsonString(payload["value"] ?? [String: Any]()))
+        case "cancelled":
+            throw CLIError(message: "panel cancelled by user")
+        case "timeout":
+            throw CLIError(message: "panel timed out waiting for user input")
+        default:
+            print(jsonString(formatIDs(payload, mode: idFormat)))
         }
     }
 
@@ -15966,6 +16072,36 @@ struct CMUXCLI {
               cmux markdown ~/project/CHANGELOG.md
               cmux markdown open ./docs/design.md --workspace 0
               cmux markdown open plan.md --direction down
+            """
+        case "panel":
+            return """
+            Usage: cmux panel prompt <spec.json|-> [options]
+
+            Open an interactive panel (rendered from a JSON UI spec) in a browser
+            split and BLOCK until the user submits or cancels. On submit, the
+            edited value is printed to stdout as JSON. Cancel and timeout exit
+            non-zero. Designed for agent handoffs: propose a structure, let the
+            user edit it, read the result back.
+
+            Spec (v1): { "title": <string>, "body": [<block>...] } where a block is
+              { "type": "markdown", "text": <string> }
+              { "type": "tree", "id": <string>, "nodes": [<node>...],
+                "features": ["rename", "move", "toggle"] }
+            Tree nodes: { "id", "label", "children"?, "included"?, "note"? }
+            Submit value: { <treeId>: { "nodes": [<edited nodes>] } }
+
+            Options:
+              --title <text>               Panel title (default: spec.title)
+              --timeout <seconds>          Wait limit, 1-86400 (default: 3600)
+              --workspace <id|ref|index>   Target workspace (default: $CMUX_WORKSPACE_ID)
+              --surface <id|ref|index>     Source surface to split from (default: focused surface)
+              --window <id|ref|index>      Target window
+              --focus <true|false>         Focus the panel (default: true)
+
+            Examples:
+              cmux panel prompt proposal.json
+              echo '{"body":[{"type":"markdown","text":"# Hi"}]}' | cmux panel prompt -
+              cmux panel prompt refactor.json --title "Proposed layout" --timeout 900
             """
         default:
             return nil
@@ -34354,6 +34490,7 @@ export default CMUXSessionRestore;
 
           markdown [open] <path> [--focus <true|false>] (open markdown file in formatted viewer panel with live reload)
           diff [patch-file|-] [--source <unstaged|staged|branch|last-turn>] [--cwd <path>] [--base <ref>] [--focus <true|false>] [--no-focus] [--title <text>] [--layout <split|unified>] [--font-size <points>] (open patch input or git source in a browser split)
+          panel prompt <spec.json|-> [--title <text>] [--timeout <seconds>] [--focus <true|false>] (open interactive panel from a JSON UI spec; blocks until submit/cancel and prints the edited value)
 
           browser [--surface <id|ref|index> | <surface>] <subcommand> ...
           browser disable | enable | status

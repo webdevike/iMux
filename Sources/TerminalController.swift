@@ -1296,6 +1296,8 @@ class TerminalController {
             return v2Result(id: request.id, v2FeedExitPlanReply(params: request.params))
         case "browser.download.wait":
             return v2Result(id: request.id, v2BrowserDownloadWaitOnSocketWorker(params: request.params))
+        case "panel.prompt":
+            return v2Result(id: request.id, v2PanelPromptOnSocketWorker(params: request.params))
         case "browser.navigate", "browser.back", "browser.forward", "browser.reload",
              "browser.snapshot", "browser.eval", "browser.wait", "browser.screenshot",
              "browser.click", "browser.dblclick", "browser.hover", "browser.focus",
@@ -2490,6 +2492,7 @@ class TerminalController {
             "file.open",
             "markdown.open",
             "browser.open_split",
+            "panel.prompt",
             "browser.navigate",
             "browser.back",
             "browser.forward",
@@ -6641,7 +6644,7 @@ class TerminalController {
         return result
     }
 
-    private func v2BrowserOpenSplit(params: [String: Any]) -> V2CallResult {
+    func v2BrowserOpenSplit(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
         }
