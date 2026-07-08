@@ -1987,3 +1987,162 @@ img.ProseMirror-separator {
     display: none;
   }
 }
+
+/* ---- Eva chat surface ---- */
+
+.eva-hero,
+.eva-hero-spacer {
+  display: none;
+}
+
+.agent-shell:has(> .eva-hero):has(> .agent-thread[data-empty]) {
+  background:
+    radial-gradient(
+      620px 340px at 50% 40%,
+      color-mix(in srgb, var(--agent-accent) 7%, transparent),
+      transparent 70%
+    ),
+    var(--agent-page-bg);
+}
+
+.agent-shell:has(> .eva-hero):has(> .agent-thread[data-empty]) > .agent-thread {
+  display: none;
+}
+
+.agent-shell:has(> .eva-hero):has(> .agent-thread[data-empty]) > .eva-hero {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-bottom: 30px;
+  text-align: center;
+}
+
+.agent-shell:has(> .eva-hero):has(> .agent-thread[data-empty]) > .eva-hero-spacer {
+  display: block;
+  flex: 1.25 1 0;
+}
+
+.agent-shell:has(> .eva-hero):has(> .agent-thread[data-empty]) .agent-composer-stack {
+  max-width: min(580px, var(--thread-content-max-width));
+}
+
+.eva-hero-title {
+  margin: 0;
+  font-size: clamp(24px, 4.5vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--agent-text);
+}
+
+.eva-hero-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--agent-muted);
+}
+
+.eva-orb {
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 32% 30%,
+    color-mix(in srgb, var(--agent-accent) 88%, white),
+    var(--agent-accent) 58%,
+    color-mix(in srgb, var(--agent-accent) 60%, transparent)
+  );
+  box-shadow: 0 0 10px color-mix(in srgb, var(--agent-accent) 40%, transparent);
+}
+
+.eva-orb-hero {
+  width: 14px;
+  height: 14px;
+  margin-bottom: 12px;
+}
+
+.eva-orb-composer {
+  width: 8px;
+  height: 8px;
+  margin: 0 5px 0 7px;
+}
+
+:root:not([data-status="running"]) .eva-orb {
+  opacity: 0.55;
+  filter: saturate(0.6);
+}
+
+:root[data-status="running"] .eva-orb {
+  animation: eva-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes eva-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(0.8);
+    opacity: 0.65;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eva-orb {
+    animation: none !important;
+  }
+}
+
+.codex-composer-surface {
+  border: 1px solid color-mix(in srgb, var(--agent-border) 85%, transparent);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.codex-composer-frame:focus-within .codex-composer-surface {
+  border-color: color-mix(in srgb, var(--agent-accent) 50%, var(--agent-border));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--agent-accent) 16%, transparent),
+    0 10px 28px -10px var(--agent-shadow, rgba(0, 0, 0, 0.35));
+}
+
+.codex-user-bubble {
+  background: color-mix(in srgb, var(--agent-accent) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--agent-accent) 18%, transparent);
+}
+
+/* ---- Mantine ↔ native theme bridge ---- */
+
+[data-mantine-color-scheme] {
+  --mantine-color-body: var(--agent-page-bg);
+  --mantine-color-text: var(--agent-text);
+  --mantine-color-dimmed: var(--agent-muted);
+  --mantine-color-placeholder: var(--agent-muted);
+  --mantine-color-anchor: var(--agent-accent);
+  --mantine-color-default: var(--agent-control);
+  --mantine-color-default-hover: var(--agent-control-hover);
+  --mantine-color-default-color: var(--agent-text);
+  --mantine-color-default-border: var(--agent-border);
+  --mantine-primary-color-filled: var(--agent-accent);
+  --mantine-primary-color-filled-hover: color-mix(in srgb, var(--agent-accent) 85%, black);
+  --mantine-primary-color-light: color-mix(in srgb, var(--agent-accent) 14%, transparent);
+  --mantine-primary-color-light-hover: color-mix(in srgb, var(--agent-accent) 22%, transparent);
+  --mantine-primary-color-light-color: var(--agent-accent);
+}
+
+[data-mantine-color-scheme] :where(.mantine-Menu-dropdown, .mantine-Popover-dropdown) {
+  background: var(--agent-surface-elevated);
+  border-color: var(--agent-border);
+}
+
+[data-mantine-color-scheme] :where(.mantine-Menu-item) {
+  color: var(--agent-text);
+}
+
+[data-mantine-color-scheme] :where(.mantine-Menu-item):hover {
+  background: var(--agent-control-hover);
+}

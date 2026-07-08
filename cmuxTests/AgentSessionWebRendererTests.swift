@@ -17,11 +17,10 @@ struct AgentSessionWebRendererTests {
             resourceDirectoryURL: resources
         )
         let equivalent = resources
-            .appendingPathComponent("markdown-viewer", isDirectory: true)
-            .appendingPathComponent("webviews-app", isDirectory: true)
+            .appendingPathComponent("agent-session-react", isDirectory: true)
             .appendingPathComponent("..", isDirectory: true)
-            .appendingPathComponent("webviews-app", isDirectory: true)
-            .appendingPathComponent("agent-session.html", isDirectory: false)
+            .appendingPathComponent("agent-session-react", isDirectory: true)
+            .appendingPathComponent("index.html", isDirectory: false)
         let otherBundledFile = resources
             .appendingPathComponent("markdown-viewer", isDirectory: true)
             .appendingPathComponent("webviews-app", isDirectory: true)

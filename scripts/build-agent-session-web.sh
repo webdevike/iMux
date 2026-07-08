@@ -71,6 +71,10 @@ write_index() {
     printf '    />\n'
     printf '    <title>cmux Agent Session</title>\n'
     printf '    <style>\n'
+    if [ -f "$out_dir/assets/app.css" ]; then
+      cat "$out_dir/assets/app.css"
+      printf '\n'
+    fi
     cat "$out_dir/assets/styles.css"
     printf '\n    </style>\n'
     printf '  </head>\n'

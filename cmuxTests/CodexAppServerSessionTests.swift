@@ -691,6 +691,42 @@ struct CodexAppServerSessionTests {
     }
 
     @Test
+    func testClaudeStreamJSONAccumulatorUnwrapsStreamEventEnvelope() {
+        var accumulator = ClaudeStreamJSONAccumulator()
+
+        expectEqual(
+            accumulator.consumeLine(
+                #"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_1","role":"assistant"}},"session_id":"s1"}"#
+            ),
+            []
+        )
+        expectEqual(
+            accumulator.consumeLine(
+                #"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hel"}},"session_id":"s1"}"#
+            ),
+            ["hel"]
+        )
+        expectEqual(
+            accumulator.consumeLine(
+                #"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}},"session_id":"s1"}"#
+            ),
+            ["lo"]
+        )
+        // The cumulative assistant message that follows the deltas must not re-emit text.
+        expectEqual(
+            accumulator.consumeLine(
+                #"{"type":"assistant","message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"hello"}]}}"#
+            ),
+            []
+        )
+        expectTrue(
+            ClaudeStreamJSONAccumulator.completesAssistantTurn(
+                #"{"type":"stream_event","event":{"type":"message_stop"},"session_id":"s1"}"#
+            )
+        )
+    }
+
+    @Test
     func testClaudeStreamJSONAccumulatorTracksDeltaTextPerAssistantMessage() {
         var accumulator = ClaudeStreamJSONAccumulator()
 

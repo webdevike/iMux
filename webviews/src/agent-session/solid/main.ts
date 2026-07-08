@@ -16,6 +16,7 @@ import {
   CODEX_COMPOSER_SURFACE,
 } from "../shared/codexClassNames";
 import { insertComposerToken } from "../shared/composerTokens";
+import { HERO_PROMPT, heroGreeting } from "../shared/heroCopy";
 import { isComposingEnter } from "../shared/keyboard";
 import { renderMarkdownHTML, renderPlainTextHTML } from "../shared/markdown";
 import { codexModelLabel, providerBadgeLabel } from "../shared/providerDisplay";
@@ -112,6 +113,20 @@ function SessionSurface({
   const root = document.createElement("section");
   root.className = "agent-shell";
   root.dataset.codexWindowType = "electron";
+
+  const hero = document.createElement("div");
+  hero.className = "eva-hero";
+  const heroOrb = document.createElement("span");
+  heroOrb.className = "eva-orb eva-orb-hero";
+  heroOrb.setAttribute("aria-hidden", "true");
+  const heroTitle = document.createElement("h1");
+  heroTitle.className = "eva-hero-title";
+  heroTitle.textContent = heroGreeting(new Date());
+  const heroSub = document.createElement("p");
+  heroSub.className = "eva-hero-sub";
+  heroSub.textContent = HERO_PROMPT;
+  hero.append(heroOrb, heroTitle, heroSub);
+  root.append(hero);
 
   const thread = document.createElement("div");
   thread.className = "agent-thread";
@@ -217,6 +232,11 @@ function SessionSurface({
   const leftRail = document.createElement("div");
   leftRail.className = "codex-left-rail";
   composerFooter.append(leftRail);
+  const composerOrb = document.createElement("span");
+  composerOrb.className = "eva-orb eva-orb-composer";
+  composerOrb.setAttribute("aria-hidden", "true");
+  leftRail.append(composerOrb);
+
 
   const modelPicker = document.createElement("label");
   modelPicker.className =
@@ -342,6 +362,10 @@ function SessionSurface({
       () => setIsRateLimitOpen((open) => !open),
     );
   });
+
+  const heroSpacer = document.createElement("div");
+  heroSpacer.className = "eva-hero-spacer";
+  root.append(heroSpacer);
 
   return root;
 }

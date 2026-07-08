@@ -18,7 +18,11 @@ enum AgentSessionRendererKind: String, CaseIterable, Codable, Identifiable, Send
     var resourceHTMLPathComponents: [String] {
         switch self {
         case .react:
-            return ["markdown-viewer", "webviews-app", "agent-session.html"]
+            // Must stay a fully-inlined single-file shell: WKWebView loads these via
+            // file:// where documents get an opaque origin, so ES-module shells like
+            // markdown-viewer/webviews-app (script type="module" + chunk imports)
+            // silently fail to load.
+            return ["agent-session-react", "index.html"]
         case .solid:
             return ["agent-session-solid", "index.html"]
         }

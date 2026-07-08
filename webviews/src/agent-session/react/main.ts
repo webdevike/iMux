@@ -1,3 +1,4 @@
+import { ActionIcon, Button, Menu, MantineProvider, Switch } from "@mantine/core";
 import React, { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { activityGlyph } from "../shared/activityGlyph";
 import { callNative, subscribeToAgentEvents } from "../shared/bridge";
@@ -18,6 +19,7 @@ import {
 } from "../shared/codexClassNames";
 import { CODEX_FOLDER_ICON_PATH } from "../shared/codexIconPaths";
 import { shouldUseSingleLineComposer } from "../shared/composerLayout";
+import { HERO_PROMPT, heroGreeting } from "../shared/heroCopy";
 import {
   computeFooterCollapse,
   footerCollapseStatesEqual,
@@ -66,8 +68,15 @@ import {
   type PromptEditorHandle,
   type PromptMention,
 } from "./proseMirrorPromptEditor";
+import { evaMantineTheme } from "./mantineTheme";
 
 const h = React.createElement;
+
+// Mantine's polymorphic components (Button, ActionIcon, Menu.Item) declare overload
+// sets React.createElement cannot resolve; pin them to plain function components.
+const MantineButton = Button as unknown as React.FC<Record<string, unknown>>;
+const MantineActionIcon = ActionIcon as unknown as React.FC<Record<string, unknown>>;
+const MantineMenuItem = Menu.Item as unknown as React.FC<Record<string, unknown>>;
 
 const USER_MESSAGE_COLLAPSED_LINE_COUNT = 20;
 const SHELL_OUTPUT_TOP_FADE_STYLE: React.CSSProperties = {
@@ -268,7 +277,11 @@ export function AgentSessionApp() {
   useInitialData(dispatch);
   useNativeEvents(dispatch);
   useAutoStart(state, dispatch);
-  return h(SessionSurface, { state, dispatch, renderer: "React" });
+  return h(
+    MantineProvider,
+    { theme: evaMantineTheme, defaultColorScheme: "dark" },
+    h(SessionSurface, { state, dispatch, renderer: "React" }),
+  );
 }
 
 function SessionSurface({
@@ -493,106 +506,82 @@ function SessionSurface({
     {
       className: "model-picker-root relative min-w-0",
       ref: (node: HTMLDivElement | null) => footerCollapse.setItemRef("intelligence", node),
-      onBlur: (event: React.FocusEvent<HTMLDivElement>) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setProviderMenuOpen(false);
-        }
-      },
     },
     h(
-      "button",
+      Menu,
       {
-        className:
-          `model-picker ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${CODEX_BUTTON_COMPOSER} min-w-0 rounded-full`,
-        type: "button",
-        disabled: !canSelect,
-        "aria-haspopup": "menu",
-        "aria-expanded": providerMenuOpen,
-        "data-state": providerMenuOpen ? "open" : "closed",
-        "data-codex-intelligence-trigger": true,
-        "data-selected-reasoning-effort": "high",
-        onClick: () => {
-          if (!canSelect) {
-            return;
+        opened: providerMenuOpen,
+        position: "top-start",
+        width: 208,
+        onChange: (opened: boolean) => {
+          if (opened) {
+            if (!canSelect) {
+              return;
+            }
+            setAddContextMenuOpen(false);
+            setPermissionsMenuOpen(false);
           }
-          setAddContextMenuOpen(false);
-          setPermissionsMenuOpen(false);
-          setProviderMenuOpen((open) => !open);
-        },
-        onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            setProviderMenuOpen(canSelect);
-          }
+          setProviderMenuOpen(opened && canSelect);
         },
       },
-      intelligenceCollapse.hideLabel
-        ? reasoningHighIcon("icon-2xs")
-        : h(
-            "span",
-            { className: "model-picker-content flex max-w-40 min-w-0 items-center gap-1.5" },
-            h(
-              "span",
-              { className: "model-display flex min-w-0 items-center gap-1 tabular-nums" },
-              h("span", { className: "model-label truncate whitespace-nowrap text-token-foreground" }, modelLabel),
-            ),
-            reasoningEffortLabel
-              ? h(
-                  "span",
-                  { className: "composer-footer__label--sm shrink-0 text-token-description-foreground" },
-                  reasoningEffortLabel,
-                )
-              : null,
-          ),
       h(
-        "span",
-        {
-          className: "model-chevron composer-footer__secondary-chevron icon-2xs text-token-input-placeholder-foreground",
-          "aria-hidden": true,
-        },
-        chevronIcon(),
-      ),
-    ),
-    providerMenuOpen
-      ? h(
-          "div",
+        Menu.Target,
+        null,
+        h(
+          "button",
           {
             className:
-              "provider-dropdown _content_1hiti_1 no-drag bg-token-dropdown-background/90 text-token-foreground ring-token-border z-50 m-px flex select-none flex-col overflow-y-auto rounded-xl ring-[0.5px] px-1 py-1 shadow-xl-spread backdrop-blur-sm w-52",
-            role: "menu",
-            "aria-label": state.context?.copy.provider ?? "",
-            "data-state": "open",
-            "data-side": "top",
-            style: {
-              "--radix-dropdown-menu-content-transform-origin": "left bottom",
-            } as React.CSSProperties,
+              `model-picker ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${CODEX_BUTTON_COMPOSER} min-w-0 rounded-full`,
+            type: "button",
+            disabled: !canSelect,
+            "data-codex-intelligence-trigger": true,
+            "data-selected-reasoning-effort": "high",
           },
-          h("div", { className: "provider-dropdown-title" }, state.context?.copy.provider ?? "Provider"),
-          state.providers.map((item) =>
-            h(
-              "button",
-              {
-                key: item.id,
-                className:
-                  "provider-dropdown-item no-drag group hover:bg-token-list-hover-background focus:bg-token-list-hover-background cursor-interaction text-token-foreground outline-hidden rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-sm",
-                type: "button",
-                role: "menuitem",
-                "data-selected": item.id === state.selectedProviderId ? "true" : undefined,
-                onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault(),
-                onClick: () => selectProviderMenuItem(item.id),
-              },
-              h(
+          intelligenceCollapse.hideLabel
+            ? reasoningHighIcon("icon-2xs")
+            : h(
                 "span",
-                { className: "provider-dropdown-item-content flex w-full items-center gap-1.5" },
-                h("span", { className: "min-w-0 flex-1 truncate" }, item.displayName),
-                item.id === state.selectedProviderId
-                  ? h("span", { className: "provider-dropdown-check icon-xs shrink-0", "aria-hidden": true }, checkIcon())
+                { className: "model-picker-content flex max-w-40 min-w-0 items-center gap-1.5" },
+                h(
+                  "span",
+                  { className: "model-display flex min-w-0 items-center gap-1 tabular-nums" },
+                  h("span", { className: "model-label truncate whitespace-nowrap text-token-foreground" }, modelLabel),
+                ),
+                reasoningEffortLabel
+                  ? h(
+                      "span",
+                      { className: "composer-footer__label--sm shrink-0 text-token-description-foreground" },
+                      reasoningEffortLabel,
+                    )
                   : null,
               ),
-            ),
+          h(
+            "span",
+            {
+              className: "model-chevron composer-footer__secondary-chevron icon-2xs text-token-input-placeholder-foreground",
+              "aria-hidden": true,
+            },
+            chevronIcon(),
           ),
-        )
-      : null,
+        ),
+      ),
+      h(
+        Menu.Dropdown,
+        null,
+        h(Menu.Label, null, state.context?.copy.provider ?? "Provider"),
+        state.providers.map((item) =>
+          h(MantineMenuItem, {
+            key: item.id,
+            onClick: () => selectProviderMenuItem(item.id),
+            rightSection:
+              item.id === state.selectedProviderId
+                ? h("span", { className: "icon-xs shrink-0", "aria-hidden": true }, checkIcon())
+                : null,
+          },
+          item.displayName,),
+        ),
+      ),
+    ),
   );
   const composerInput = h(PromptEditor, {
     ref: editorRef,
@@ -637,6 +626,7 @@ function SessionSurface({
   const leftControls = h(
     "div",
     { className: "codex-left-rail flex min-w-0 items-center gap-[5px]" },
+    h("span", { className: "eva-orb eva-orb-composer", "aria-hidden": true }),
     h(AddContextDropdown, {
       hasIdeContext: workspaceContextItem != null,
       isAutoContextOn,
@@ -689,53 +679,46 @@ function SessionSurface({
     "div",
     { className: "codex-action-cluster flex shrink-0 items-center gap-2" },
     showStart
-      ? h(
-          "button",
-          {
-            className: `codex-action codex-start ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${CODEX_BUTTON_COMPOSER} rounded-full`,
-            type: "button",
-            disabled: !canStart,
-            onClick: () => void startProvider(state, dispatch),
-          },
-          state.context?.copy.start ?? "Start",
-        )
+      ? h(MantineButton, {
+        variant: "subtle",
+        color: "gray",
+        size: "compact-sm",
+        radius: "xl",
+        disabled: !canStart,
+        onClick: () => void startProvider(state, dispatch),
+      },
+      state.context?.copy.start ?? "Start",)
       : null,
     canStop
-      ? h(
-          "button",
-          {
-            className:
-              `codex-action codex-stop ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${CODEX_BUTTON_COMPOSER} ${CODEX_BUTTON_UNIFORM} rounded-full`,
-            type: "button",
-            "aria-label": state.context?.copy.stop ?? "Stop",
-            onClick: () => void stopProvider(state, dispatch),
-          },
-          stopIcon(),
-        )
+      ? h(MantineActionIcon, {
+        variant: "subtle",
+        color: "gray",
+        radius: "xl",
+        size: 28,
+        "aria-label": state.context?.copy.stop ?? "Stop",
+        onClick: () => void stopProvider(state, dispatch),
+      },
+      stopIcon(),)
       : null,
-    h(
-      "button",
-      {
-        className:
-          `codex-action codex-mic ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${CODEX_BUTTON_COMPOSER} ${CODEX_BUTTON_UNIFORM} rounded-full`,
-        type: "button",
-        disabled: true,
-        "aria-label": state.context?.copy.voiceInput ?? "",
-      },
-      micIcon(),
-    ),
-    h(
-      "button",
-      {
-        className:
-          `codex-action send-button ${CODEX_SUBMIT_BUTTON}${canSend ? "" : " cursor-default opacity-50"}`,
-        type: "button",
-        disabled: !canSend,
-        "aria-label": state.context?.copy.send ?? "Send",
-        onClick: submit,
-      },
-      sendIcon("icon-sm text-token-dropdown-background"),
-    ),
+    h(MantineActionIcon, {
+      variant: "subtle",
+      color: "gray",
+      radius: "xl",
+      size: 28,
+      disabled: true,
+      "aria-label": state.context?.copy.voiceInput ?? "",
+    },
+    micIcon(),),
+    h(MantineActionIcon, {
+      variant: "filled",
+      radius: "xl",
+      size: 28,
+      disabled: !canSend,
+      className: "send-button",
+      "aria-label": state.context?.copy.send ?? "Send",
+      onClick: submit,
+    },
+    sendIcon("icon-sm"),),
   );
   const singleLineRightControls = h(
     "div",
@@ -815,6 +798,7 @@ function SessionSurface({
   return h(
     "section",
     { className: "agent-shell", "data-codex-window-type": "electron" },
+    h(EvaHero, null),
     h(TranscriptThread, { entries: state.transcript, copy: state.context?.copy }),
     h(
       "div",
@@ -870,6 +854,17 @@ function SessionSurface({
       ),
       h(RateLimitFooter, { state, providerDisplayName: provider?.displayName ?? renderer }),
     ),
+    h("div", { className: "eva-hero-spacer" }),
+  );
+}
+
+function EvaHero() {
+  return h(
+    "div",
+    { className: "eva-hero" },
+    h("span", { className: "eva-orb eva-orb-hero", "aria-hidden": true }),
+    h("h1", { className: "eva-hero-title" }, heroGreeting(new Date())),
+    h("p", { className: "eva-hero-sub" }, HERO_PROMPT),
   );
 }
 
@@ -2023,117 +2018,68 @@ function PermissionsDropdown({
   const selectedLabel = permissionModeLabel(copy, mode);
   const options: ComposerPermissionMode[] = isEnabled ? ["default", "auto-review", "full-access", "custom"] : [];
   const triggerSizeClass = hideLabel ? CODEX_BUTTON_COMPOSER_SM : CODEX_BUTTON_COMPOSER;
-  const selectMode = (nextMode: ComposerPermissionMode) => {
-    onModeChange(nextMode);
-    onOpenChange(false);
-  };
   const effectiveIsOpen = isEnabled && isOpen;
   return h(
-    "div",
+    Menu,
     {
-      className: "permissions-root relative inline-flex",
-      onBlur: (event: React.FocusEvent<HTMLDivElement>) => {
-        if (isEnabled && !event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          onOpenChange(false);
+      opened: effectiveIsOpen,
+      position: "top-start",
+      width: 232,
+      onChange: (opened: boolean) => {
+        if (isEnabled) {
+          onOpenChange(opened);
         }
       },
     },
     h(
-      "button",
-      {
-        className:
-          `permissions-trigger ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${triggerSizeClass} ${hideLabel ? CODEX_BUTTON_UNIFORM : "min-w-0"} rounded-full`,
-        type: "button",
-        "aria-label": triggerLabel,
-        "aria-haspopup": isEnabled ? "menu" : undefined,
-        "aria-expanded": isEnabled ? effectiveIsOpen : undefined,
-        "aria-disabled": isEnabled ? undefined : true,
-        "data-permission-mode": mode,
-        "data-state": effectiveIsOpen ? "open" : "closed",
-        disabled: !isEnabled,
-        onClick: () => {
-          if (isEnabled) {
-            onOpenChange(!effectiveIsOpen);
-          }
+      Menu.Target,
+      null,
+      h(
+        "button",
+        {
+          className:
+            `permissions-trigger ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${triggerSizeClass} ${hideLabel ? CODEX_BUTTON_UNIFORM : "min-w-0"} rounded-full`,
+          type: "button",
+          "aria-label": triggerLabel,
+          "aria-disabled": isEnabled ? undefined : true,
+          "data-permission-mode": mode,
+          disabled: !isEnabled,
         },
-        onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
-          if (!isEnabled) {
-            return;
-          }
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            onOpenChange(true);
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onOpenChange(false);
-          }
-        },
-      },
-      permissionModeIcon(mode, "icon-xs shrink-0"),
-      hideLabel
-        ? null
-        : h(
-            "span",
-            { className: "permissions-trigger-label composer-footer__label--xs max-w-40 truncate whitespace-nowrap text-left" },
-            selectedLabel,
-          ),
-      isEnabled ? h("span", { className: "permissions-trigger-chevron icon-2xs shrink-0", "aria-hidden": true }, chevronIcon()) : null,
+        permissionModeIcon(mode, "icon-xs shrink-0"),
+        hideLabel
+          ? null
+          : h(
+              "span",
+              { className: "permissions-trigger-label composer-footer__label--xs max-w-40 truncate whitespace-nowrap text-left" },
+              selectedLabel,
+            ),
+        isEnabled ? h("span", { className: "permissions-trigger-chevron icon-2xs shrink-0", "aria-hidden": true }, chevronIcon()) : null,
+      ),
     ),
-    effectiveIsOpen
-      ? h(
-          "div",
-          {
-            className:
-              "permissions-dropdown _content_1hiti_1 no-drag bg-token-dropdown-background/90 text-token-foreground ring-token-border z-50 m-px flex select-none flex-col overflow-y-auto rounded-xl ring-[0.5px] px-1 py-1 shadow-xl-spread backdrop-blur-sm",
-            role: "menu",
-            "aria-label": triggerLabel,
-            "data-state": "open",
-            "data-side": "top",
-            style: {
-              "--radix-dropdown-menu-content-transform-origin": "left bottom",
-            } as React.CSSProperties,
-          },
-          options.map((option) =>
-            h(PermissionsMenuItem, {
-              isSelected: option === mode,
-              key: option,
-              label: permissionModeLabel(copy, option),
-              mode: option,
-              onSelect: () => selectMode(option),
-            }),
+    h(
+      Menu.Dropdown,
+      { "aria-label": triggerLabel },
+      options.map((option) =>
+        h(MantineMenuItem, {
+          key: option,
+          "data-permission-mode": option,
+          leftSection: h(
+            "span",
+            { className: "icon-xs shrink-0", "aria-hidden": true },
+            permissionModeIcon(option, "icon-xs shrink-0"),
           ),
-        )
-      : null,
-  );
-}
-
-function PermissionsMenuItem({
-  isSelected,
-  label,
-  mode,
-  onSelect,
-}: {
-  isSelected: boolean;
-  label: string;
-  mode: ComposerPermissionMode;
-  onSelect: () => void;
-}) {
-  return h(
-    "button",
-    {
-      className: "permissions-item no-drag group hover:bg-token-list-hover-background focus:bg-token-list-hover-background cursor-interaction text-token-foreground outline-hidden rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-sm",
-      type: "button",
-      role: "menuitemradio",
-      "aria-checked": isSelected,
-      "data-permission-mode": mode,
-      "data-selected": isSelected ? "true" : undefined,
-      onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault(),
-      onClick: onSelect,
-    },
-    h("span", { className: "permissions-item-icon icon-xs shrink-0", "aria-hidden": true }, permissionModeIcon(mode, "icon-xs shrink-0")),
-    h("span", { className: "permissions-item-label min-w-0 flex-1 truncate" }, label),
-    isSelected ? h("span", { className: "permissions-item-check icon-xs shrink-0", "aria-hidden": true }, checkIcon()) : null,
+          rightSection:
+            option === mode
+              ? h("span", { className: "icon-xs shrink-0", "aria-hidden": true }, checkIcon())
+              : null,
+          onClick: () => {
+            onModeChange(option);
+            onOpenChange(false);
+          },
+        },
+        permissionModeLabel(copy, option),),
+      ),
+    ),
   );
 }
 
@@ -2166,170 +2112,72 @@ function AddContextDropdown({
   const skillItems = composerMenuItems("skill", state, "");
   const planItem = skillItems.find((item) => item.id === "plan") ?? null;
   return h(
-    "div",
+    Menu,
     {
-      className: "add-context-root relative inline-flex",
-      onBlur: (event: React.FocusEvent<HTMLDivElement>) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          onOpenChange(false);
-        }
-      },
+      opened: isOpen,
+      position: "top-start",
+      width: 260,
+      onChange: onOpenChange,
     },
     h(
-      "button",
-      {
-        className:
-          `codex-tool codex-tool-plus ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${CODEX_BUTTON_COMPOSER} ${CODEX_BUTTON_UNIFORM} rounded-full`,
-        type: "button",
-        "aria-label": addFilesAndMoreLabel,
-        "aria-haspopup": "menu",
-        "aria-expanded": isOpen,
-        "data-state": isOpen ? "open" : "closed",
-        onClick: () => onOpenChange(!isOpen),
-        onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            onOpenChange(true);
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onOpenChange(false);
-          }
+      Menu.Target,
+      null,
+      h(
+        "button",
+        {
+          className:
+            `codex-tool codex-tool-plus ${CODEX_BUTTON_BASE} ${CODEX_BUTTON_GHOST} ${CODEX_BUTTON_COMPOSER} ${CODEX_BUTTON_UNIFORM} rounded-full`,
+          type: "button",
+          "aria-label": addFilesAndMoreLabel,
         },
-      },
-      plusIcon(),
+        plusIcon(),
+      ),
     ),
-    isOpen
-      ? h(
-          "div",
-          {
-            className:
-              "add-context-dropdown _content_1hiti_1 no-drag bg-token-dropdown-background/90 text-token-foreground ring-token-border z-50 m-px flex select-none flex-col overflow-y-auto rounded-xl ring-[0.5px] px-1 py-1 shadow-xl-spread backdrop-blur-sm",
-            role: "menu",
-            "aria-label": addFilesAndMoreLabel,
-            "data-state": "open",
-            "data-side": "top",
-            style: {
-              "--radix-dropdown-menu-content-transform-origin": "left bottom",
-            } as React.CSSProperties,
-          },
-          h(AddContextMenuItem, {
-            disabled: isPickingFiles,
-            icon: paperclipIcon("icon-xs"),
-            label: addPhotosAndFilesLabel,
-            onSelect: onPickFiles,
-          }),
-          hasIdeContext || planItem ? h(AddContextSeparator) : null,
-          hasIdeContext
-            ? h(AddContextMenuSwitchItem, {
-                checked: isAutoContextOn,
-                icon: ideContextIcon("icon-sm"),
-                label: copy?.includeIdeContext ?? "Include IDE context",
-                onSelect: onToggleAutoContext,
-              })
-            : null,
-          planItem
-            ? h(AddContextMenuSwitchItem, {
-                checked: isPlanMode,
-                icon: sparkleIcon(),
-                label: copy?.planMode ?? "Plan mode",
-                onSelect: onTogglePlanMode,
-              })
-            : null,
-        )
-      : null,
-  );
-}
-
-function AddContextMenuItem({
-  detail,
-  disabled = false,
-  icon,
-  label,
-  onSelect,
-}: {
-  detail?: string;
-  disabled?: boolean;
-  icon: React.ReactNode;
-  label: string;
-  onSelect: () => void;
-}) {
-  return h(
-    "button",
-    {
-      className:
-        "add-context-item group no-drag hover:bg-token-list-hover-background focus:bg-token-list-hover-background cursor-interaction text-token-foreground outline-hidden rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-sm",
-      disabled,
-      type: "button",
-      role: "menuitem",
-      onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault(),
-      onClick: disabled ? undefined : onSelect,
-    },
-    h("span", { className: "add-context-item-icon icon-xs shrink-0", "aria-hidden": true }, icon),
     h(
-      "span",
-      { className: "add-context-item-copy flex min-w-0 flex-1 items-center gap-2" },
-      h("span", { className: "add-context-item-label min-w-0 truncate" }, label),
-      detail
-        ? h("span", { className: "add-context-item-detail min-w-0 flex-1 truncate text-token-description-foreground" }, detail)
+      Menu.Dropdown,
+      { "aria-label": addFilesAndMoreLabel },
+      h(MantineMenuItem, {
+        disabled: isPickingFiles,
+        leftSection: h("span", { className: "icon-xs shrink-0", "aria-hidden": true }, paperclipIcon("icon-xs")),
+        onClick: onPickFiles,
+      },
+      addPhotosAndFilesLabel,),
+      hasIdeContext || planItem ? h(Menu.Divider) : null,
+      hasIdeContext
+        ? h(MantineMenuItem, {
+          closeMenuOnClick: false,
+          role: "menuitemcheckbox",
+          "aria-checked": isAutoContextOn,
+          leftSection: h("span", { className: "icon-xs shrink-0", "aria-hidden": true }, ideContextIcon("icon-sm")),
+          rightSection: h(Switch, {
+            checked: isAutoContextOn,
+            size: "xs",
+            readOnly: true,
+            tabIndex: -1,
+            "aria-hidden": true,
+          }),
+          onClick: onToggleAutoContext,
+        },
+        copy?.includeIdeContext ?? "Include IDE context",)
+        : null,
+      planItem
+        ? h(MantineMenuItem, {
+          closeMenuOnClick: false,
+          role: "menuitemcheckbox",
+          "aria-checked": isPlanMode,
+          leftSection: h("span", { className: "icon-xs shrink-0", "aria-hidden": true }, sparkleIcon()),
+          rightSection: h(Switch, {
+            checked: isPlanMode,
+            size: "xs",
+            readOnly: true,
+            tabIndex: -1,
+            "aria-hidden": true,
+          }),
+          onClick: onTogglePlanMode,
+        },
+        copy?.planMode ?? "Plan mode",)
         : null,
     ),
-  );
-}
-
-function AddContextMenuSwitchItem({
-  checked,
-  icon,
-  label,
-  onSelect,
-}: {
-  checked: boolean;
-  icon: React.ReactNode;
-  label: string;
-  onSelect: () => void;
-}) {
-  const state = checked ? "checked" : "unchecked";
-  const trackClass = checked
-    ? "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full bg-token-charts-blue transition-colors duration-200 ease-out"
-    : "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full bg-token-foreground/10 transition-colors duration-200 ease-out";
-  return h(
-    "button",
-    {
-      className:
-        "add-context-item group no-drag hover:bg-token-list-hover-background focus:bg-token-list-hover-background cursor-interaction text-token-foreground outline-hidden rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-sm",
-      type: "button",
-      role: "menuitemcheckbox",
-      "aria-checked": checked,
-      onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault(),
-      onClick: onSelect,
-    },
-    h("span", { className: "add-context-item-icon icon-xs shrink-0", "aria-hidden": true }, icon),
-    h(
-      "span",
-      { className: "add-context-switch-row flex w-full min-w-0 items-center justify-between gap-2" },
-      h(
-        "span",
-        { className: "flex min-w-0 items-center gap-2" },
-        h("span", { className: "add-context-item-label min-w-0 truncate" }, label),
-      ),
-      h(
-        "span",
-        { className: trackClass, "data-state": state, "aria-hidden": true },
-        h("span", {
-          className:
-            "h-3 w-3 rounded-full border border-[color:var(--gray-0)] bg-[color:var(--gray-0)] shadow-sm transition-transform duration-200 ease-out data-[state=unchecked]:translate-x-[2px] data-[state=checked]:translate-x-[14px]",
-          "data-state": state,
-        }),
-      ),
-    ),
-  );
-}
-
-function AddContextSeparator() {
-  return h(
-    "div",
-    { className: "add-context-separator w-full px-[var(--padding-row-x)] py-1", role: "separator" },
-    h("div", { className: "add-context-separator-line h-[1px] w-full bg-token-menu-border" }),
   );
 }
 

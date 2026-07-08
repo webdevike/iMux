@@ -17,9 +17,10 @@ struct ClaudeStreamJSONAccumulator {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let data = trimmed.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return []
         }
+        let object = Self.unwrappingStreamEventEnvelope(parsed)
 
         if let messageID = assistantMessageID(fromMessageStart: object) {
             rememberMessageID(messageID)
@@ -58,12 +59,24 @@ struct ClaudeStreamJSONAccumulator {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let data = trimmed.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = object["type"] as? String else {
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = unwrappingStreamEventEnvelope(parsed)["type"] as? String else {
             return false
         }
 
         return completesAssistantTurn(type: type)
+    }
+
+    /// `claude -p --include-partial-messages` wraps every SSE-style streaming line as
+    /// `{"type":"stream_event","event":{...}}`; the payload types this accumulator
+    /// matches on (`message_start`, `content_block_delta`, `message_stop`) live one
+    /// level down in `event`.
+    private static func unwrappingStreamEventEnvelope(_ object: [String: Any]) -> [String: Any] {
+        guard object["type"] as? String == "stream_event",
+              let inner = object["event"] as? [String: Any] else {
+            return object
+        }
+        return inner
     }
 
     private static func completesAssistantTurn(from object: [String: Any]) -> Bool {

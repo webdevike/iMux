@@ -2,6 +2,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
 import { AgentSessionApp } from "../agent-session/react/main";
 import { applyCodexDocumentMetadata } from "../agent-session/shared/theme";
+import mantineStyles from "@mantine/core/styles.css?inline";
 import agentSessionStyles from "../agent-session/shared/styles.css?inline";
 import { createWebviewsRouter } from "../router";
 import { installWebviewStyles } from "./installWebviewStyles";
@@ -12,6 +13,7 @@ import { installWebviewStyles } from "./installWebviewStyles";
  * its own chunk so the diff viewer never ships the agent session UI.
  */
 export function mountAgentSessionSurface(rootElement: HTMLElement): void {
+  installWebviewStyles("mantine", mantineStyles);
   installWebviewStyles("agent-session", agentSessionStyles);
   applyCodexDocumentMetadata();
   document.documentElement.dataset.cmuxWebviewKind = "agent-session";
