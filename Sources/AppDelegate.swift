@@ -15262,6 +15262,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 MobilePairingWindowController.shared.show()
                 onExecuted?()
                 return true
+            case .openDiffViewer:
+                let didOpen = openDiffViewerForFocusedWorkspace(for: context.tabManager)
+                if didOpen { onExecuted?() }
+                return didOpen
             case .newTerminal:
                 context.tabManager.newSurface()
                 onExecuted?()

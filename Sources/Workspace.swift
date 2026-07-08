@@ -12971,6 +12971,8 @@ extension Workspace: BonsplitDelegate {
                 )
             case .mobileConnect:
                 MobilePairingWindowController.shared.show()
+            case .openDiffViewer:
+                _ = AppDelegate.shared?.openDiffViewerForFocusedWorkspace(for: owningTabManager)
             case .newTerminal, .newBrowser, .splitRight, .splitDown:
                 break
             }

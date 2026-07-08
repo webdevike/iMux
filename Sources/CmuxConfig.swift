@@ -1574,6 +1574,9 @@ struct CmuxResolvedConfigAction: Identifiable, Sendable, Hashable {
         case .splitDown:
             title = String(localized: "command.terminalSplitDown.title", defaultValue: "Split Down")
             keywords = ["terminal", "split", "down"]
+        case .openDiffViewer:
+            title = String(localized: "command.openDiffViewerButton.title", defaultValue: "Open Diff Viewer")
+            keywords = ["diff", "changes", "git", "review", "viewer"]
         }
 
         return CmuxResolvedConfigAction(
