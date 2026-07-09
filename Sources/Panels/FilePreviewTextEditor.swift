@@ -48,6 +48,9 @@ struct FilePreviewTextEditor<PanelModel>: NSViewRepresentable where PanelModel: 
 
         scrollView.documentView = textView
         textView.applyFilePreviewWordWrap(wordWrap, scrollView: scrollView)
+        scrollView.hasVerticalRuler = true
+        scrollView.rulersVisible = true
+        scrollView.verticalRulerView = FilePreviewLineNumberRulerView(textView: textView, scrollView: scrollView)
         Self.applyTheme(
             to: scrollView,
             backgroundColor: themeBackgroundColor,
@@ -104,6 +107,14 @@ struct FilePreviewTextEditor<PanelModel>: NSViewRepresentable where PanelModel: 
             textView.backgroundColor = resolvedBackgroundColor
             textView.textColor = foregroundColor
             textView.insertionPointColor = foregroundColor
+        }
+        let isDark = FilePreviewSyntaxHighlighter.isDark(foregroundColor: foregroundColor)
+        if let savingTextView = scrollView.documentView as? SavingTextView {
+            savingTextView.applyEditorChromeTheme(isDark: isDark)
+        }
+        if let ruler = scrollView.verticalRulerView as? FilePreviewLineNumberRulerView {
+            ruler.gutterTextColor = foregroundColor.withAlphaComponent(0.45)
+            ruler.gutterBackgroundColor = resolvedBackgroundColor
         }
     }
 
@@ -260,7 +271,8 @@ extension SavingTextView {
         textView.allowsUndo = true
         textView.isRichText = false
         textView.importsGraphics = false
-        textView.usesFindPanel = true
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
         textView.usesFontPanel = false
         textView.applyCurrentPreviewFont()
         textView.minSize = NSSize(width: 0, height: 0)
@@ -331,6 +343,9 @@ final class SavingTextView: NSTextView {
     private var fontMagnificationObserver: GlobalFontMagnificationChangeObserver?
     private var highlightSignature: FilePreviewSyntaxHighlightSignature?
     private var cachedHighlightRuns: [FilePreviewSyntaxHighlightRun]?
+    private var currentLineHighlightColor: NSColor?
+    private var bracketMatchColor: NSColor = NSColor.systemGray.withAlphaComponent(0.3)
+    private var bracketHighlightRanges: [NSRange] = []
 
     convenience init() {
         self.init(frame: .zero, textContainer: nil)
@@ -435,6 +450,133 @@ final class SavingTextView: NSTextView {
         let nextFont = GlobalFontMagnification.monospacedSystemFont(ofSize: previewFontSize, weight: .regular)
         font = nextFont
         typingAttributes[.font] = nextFont
+    }
+
+    // MARK: Editor chrome — current-line highlight + bracket matching
+
+    /// Sets the current-line and bracket-match overlay colors for the active
+    /// theme and re-applies the bracket highlight. Colors are overlays drawn
+    /// (current line) or applied as temporary attributes (brackets), so they
+    /// never touch text storage and cannot fight the syntax-highlight runs or
+    /// the `applyTheme` foreground-color reset.
+    func applyEditorChromeTheme(isDark: Bool) {
+        let base: NSColor = isDark ? .white : .black
+        currentLineHighlightColor = base.withAlphaComponent(isDark ? 0.07 : 0.05)
+        bracketMatchColor = base.withAlphaComponent(isDark ? 0.22 : 0.16)
+        for range in bracketHighlightRanges {
+            layoutManager?.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+        }
+        bracketHighlightRanges = []
+        updateBracketMatchHighlight(stillSelecting: false)
+        needsDisplay = true
+    }
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard let highlightColor = currentLineHighlightColor,
+              let layoutManager, textContainer != nil else { return }
+        let selection = selectedRange()
+        guard selection.length == 0 else { return }
+        let length = (string as NSString).length
+        let caret = min(selection.location, length)
+        let lineRect: NSRect
+        if length == 0 || caret >= length,
+           layoutManager.extraLineFragmentTextContainer != nil {
+            lineRect = layoutManager.extraLineFragmentRect
+        } else {
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: caret)
+            lineRect = layoutManager.lineFragmentRect(forGlyphAt: min(glyphIndex, max(0, layoutManager.numberOfGlyphs - 1)), effectiveRange: nil)
+        }
+        guard !lineRect.isEmpty else { return }
+        let origin = textContainerOrigin
+        let fullWidth = NSRect(x: 0, y: lineRect.minY + origin.y, width: bounds.width, height: lineRect.height)
+        guard fullWidth.intersects(rect) else { return }
+        highlightColor.setFill()
+        fullWidth.fill()
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelectingFlag)
+        updateBracketMatchHighlight(stillSelecting: stillSelectingFlag)
+        needsDisplay = true
+    }
+
+    private func updateBracketMatchHighlight(stillSelecting: Bool) {
+        guard let layoutManager else { return }
+        for range in bracketHighlightRanges {
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+        }
+        bracketHighlightRanges = []
+        guard !stillSelecting else { return }
+        let selection = selectedRange()
+        guard selection.length == 0 else { return }
+        let text = string as NSString
+        let length = text.length
+        guard let (bracketIndex, isOpen) = adjacentBracket(in: text, caret: selection.location, length: length),
+              let matchIndex = matchingBracketIndex(in: text, from: bracketIndex, isOpen: isOpen, length: length) else { return }
+        let ranges = [NSRange(location: bracketIndex, length: 1), NSRange(location: matchIndex, length: 1)]
+        for range in ranges {
+            layoutManager.addTemporaryAttribute(.backgroundColor, value: bracketMatchColor, forCharacterRange: range)
+        }
+        bracketHighlightRanges = ranges
+    }
+
+    private func adjacentBracket(in text: NSString, caret: Int, length: Int) -> (index: Int, isOpen: Bool)? {
+        if caret > 0, let open = Self.bracketIsOpen(text.character(at: caret - 1)) {
+            return (caret - 1, open)
+        }
+        if caret < length, let open = Self.bracketIsOpen(text.character(at: caret)) {
+            return (caret, open)
+        }
+        return nil
+    }
+
+    private static func bracketIsOpen(_ c: unichar) -> Bool? {
+        switch c {
+        case 0x28, 0x5B, 0x7B: return true   // ( [ {
+        case 0x29, 0x5D, 0x7D: return false  // ) ] }
+        default: return nil
+        }
+    }
+
+    private static func matchingBracket(_ c: unichar) -> unichar {
+        switch c {
+        case 0x28: return 0x29
+        case 0x29: return 0x28
+        case 0x5B: return 0x5D
+        case 0x5D: return 0x5B
+        case 0x7B: return 0x7D
+        case 0x7D: return 0x7B
+        default: return c
+        }
+    }
+
+    /// Scans outward from a bracket for its balanced partner, capped so an
+    /// unbalanced huge document can never turn a keystroke into an O(N) scan.
+    private func matchingBracketIndex(in text: NSString, from index: Int, isOpen: Bool, length: Int) -> Int? {
+        let maxScan = 50_000
+        let bracket = text.character(at: index)
+        let partner = Self.matchingBracket(bracket)
+        var depth = 0
+        var scanned = 0
+        var i = index
+        while scanned < maxScan {
+            if isOpen {
+                guard i < length else { return nil }
+            } else {
+                guard i >= 0 else { return nil }
+            }
+            let c = text.character(at: i)
+            if c == bracket {
+                depth += 1
+            } else if c == partner {
+                depth -= 1
+                if depth == 0 { return i }
+            }
+            i += isOpen ? 1 : -1
+            scanned += 1
+        }
+        return nil
     }
 
     /// Applies syntax-highlight foreground colors over the current text. Recomputes
@@ -582,5 +724,150 @@ extension FilePreviewPanel {
         guard previewMode == .text,
               let textView = textView as? SavingTextView else { return false }
         return textView.resetPreviewFontSize()
+    }
+}
+
+/// Left-margin line-number gutter for the File Preview editor.
+///
+/// Line-start character offsets are rebuilt only when the text changes
+/// (`NSText.didChangeNotification`), never per scroll/redraw, so drawing stays
+/// O(visible lines). Documents past `maxGutterableLength` collapse the gutter
+/// to zero width rather than paying the O(N) index build on every keystroke —
+/// preserving the 16 MB large-file path the editor is tuned for.
+final class FilePreviewLineNumberRulerView: NSRulerView {
+    private static let maxGutterableLength = 2_000_000
+    private static let horizontalPadding: CGFloat = 8
+
+    private weak var editorTextView: NSTextView?
+    private var lineStartIndices: [Int] = [0]
+    private var lineIndexDirty = true
+
+    var gutterTextColor: NSColor = .secondaryLabelColor { didSet { needsDisplay = true } }
+    var gutterBackgroundColor: NSColor = .clear { didSet { needsDisplay = true } }
+
+    init(textView: NSTextView, scrollView: NSScrollView) {
+        editorTextView = textView
+        super.init(scrollView: scrollView, orientation: .verticalRuler)
+        clientView = textView
+        ruleThickness = 44
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(handleTextChange), name: NSText.didChangeNotification, object: textView)
+        center.addObserver(self, selector: #selector(handleBoundsChange), name: NSView.frameDidChangeNotification, object: textView)
+        if let clip = scrollView.contentView as NSClipView? {
+            clip.postsBoundsChangedNotifications = true
+            center.addObserver(self, selector: #selector(handleBoundsChange), name: NSView.boundsDidChangeNotification, object: clip)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func handleTextChange() { lineIndexDirty = true; needsDisplay = true }
+    @objc private func handleBoundsChange() { needsDisplay = true }
+
+    private var gutterFont: NSFont {
+        let base = editorTextView?.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        return NSFont.monospacedSystemFont(ofSize: max(9, base.pointSize - 2), weight: .regular)
+    }
+
+    private func rebuildLineIndexIfNeeded(_ text: NSString) {
+        guard lineIndexDirty else { return }
+        lineIndexDirty = false
+        guard text.length <= Self.maxGutterableLength else {
+            lineStartIndices = []
+            updateThickness(lineCount: 0)
+            return
+        }
+        var starts: [Int] = [0]
+        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length),
+                                 options: [.byLines, .substringNotRequired]) { _, _, enclosingRange, _ in
+            let next = enclosingRange.location + enclosingRange.length
+            if next < text.length { starts.append(next) }
+        }
+        lineStartIndices = starts
+        updateThickness(lineCount: starts.count)
+    }
+
+    private func updateThickness(lineCount: Int) {
+        guard lineCount > 0 else {
+            if ruleThickness != 0 { ruleThickness = 0 }
+            return
+        }
+        let digits = max(2, String(lineCount).count)
+        let sample = String(repeating: "8", count: digits) as NSString
+        let width = ceil(sample.size(withAttributes: [.font: gutterFont]).width) + Self.horizontalPadding * 2
+        if abs(ruleThickness - width) > 0.5 { ruleThickness = width }
+    }
+
+    /// 1-based line number for a character index: count of line starts <= index.
+    private func lineNumber(forCharIndex charIndex: Int) -> Int {
+        var lo = 0, hi = lineStartIndices.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if lineStartIndices[mid] <= charIndex { lo = mid + 1 } else { hi = mid }
+        }
+        return lo
+    }
+
+    private func isLineStart(_ charIndex: Int) -> Bool {
+        var lo = 0, hi = lineStartIndices.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            let v = lineStartIndices[mid]
+            if v == charIndex { return true }
+            if v < charIndex { lo = mid + 1 } else { hi = mid }
+        }
+        return false
+    }
+
+    override func drawHashMarksAndLabels(in rect: NSRect) {
+        guard let textView = editorTextView,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return }
+        let text = textView.string as NSString
+        rebuildLineIndexIfNeeded(text)
+
+        gutterBackgroundColor.setFill()
+        rect.fill()
+        guard !lineStartIndices.isEmpty else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [.font: gutterFont, .foregroundColor: gutterTextColor]
+        let relativeY = convert(NSPoint.zero, from: textView).y
+        let insetY = textView.textContainerInset.height
+        let visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: textView.visibleRect, in: textContainer)
+
+        layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { fragmentRect, _, _, glyphRange, _ in
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
+            guard self.isLineStart(charIndex) else { return }
+            self.drawNumber(self.lineNumber(forCharIndex: charIndex),
+                            atFragmentY: fragmentRect.minY, height: fragmentRect.height,
+                            relativeY: relativeY, insetY: insetY, attributes: attributes)
+        }
+
+        // Trailing empty line (document empty, or ends in a newline): the extra
+        // line fragment that `enumerateLineFragments` does not report.
+        if text.length == 0 {
+            let extra = layoutManager.extraLineFragmentRect
+            if !extra.isEmpty {
+                drawNumber(1, atFragmentY: extra.minY, height: extra.height,
+                           relativeY: relativeY, insetY: insetY, attributes: attributes)
+            }
+        } else if text.character(at: text.length - 1) == 0x0A {
+            let extra = layoutManager.extraLineFragmentRect
+            if !extra.isEmpty {
+                drawNumber(lineStartIndices.count + 1, atFragmentY: extra.minY, height: extra.height,
+                           relativeY: relativeY, insetY: insetY, attributes: attributes)
+            }
+        }
+    }
+
+    private func drawNumber(_ number: Int, atFragmentY fragmentY: CGFloat, height: CGFloat,
+                            relativeY: CGFloat, insetY: CGFloat,
+                            attributes: [NSAttributedString.Key: Any]) {
+        let label = String(number) as NSString
+        let size = label.size(withAttributes: attributes)
+        let y = relativeY + fragmentY + insetY + (height - size.height) / 2
+        let x = ruleThickness - size.width - Self.horizontalPadding
+        label.draw(at: NSPoint(x: x, y: y), withAttributes: attributes)
     }
 }
