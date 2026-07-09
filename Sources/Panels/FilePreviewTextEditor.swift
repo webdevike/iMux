@@ -1,4 +1,5 @@
 import AppKit
+import Highlightr
 import CmuxFoundation
 import CmuxSettings
 import SwiftUI
@@ -6,6 +7,7 @@ import SwiftUI
 @MainActor
 protocol FilePreviewTextEditingPanel: AnyObject {
     var textContent: String { get }
+    var filePath: String { get }
 
     func attachTextView(_ textView: NSTextView)
     func retryPendingFocus()
@@ -52,6 +54,11 @@ struct FilePreviewTextEditor<PanelModel>: NSViewRepresentable where PanelModel: 
             foregroundColor: themeForegroundColor,
             drawsBackground: drawsBackground
         )
+        textView.applyFilePreviewSyntaxHighlight(
+            fileURL: URL(fileURLWithPath: panel.filePath),
+            isDark: FilePreviewSyntaxHighlighter.isDark(foregroundColor: themeForegroundColor),
+            fallbackColor: themeForegroundColor
+        )
         return scrollView
     }
 
@@ -69,10 +76,16 @@ struct FilePreviewTextEditor<PanelModel>: NSViewRepresentable where PanelModel: 
         textView.applyFilePreviewTextEditorInsets()
         textView.applyFilePreviewWordWrap(wordWrap, scrollView: scrollView)
         panel.attachTextView(textView)
-        guard textView.string != panel.textContent else { return }
-        context.coordinator.isApplyingPanelUpdate = true
-        textView.string = panel.textContent
-        context.coordinator.isApplyingPanelUpdate = false
+        if textView.string != panel.textContent {
+            context.coordinator.isApplyingPanelUpdate = true
+            textView.string = panel.textContent
+            context.coordinator.isApplyingPanelUpdate = false
+        }
+        textView.applyFilePreviewSyntaxHighlight(
+            fileURL: URL(fileURLWithPath: panel.filePath),
+            isDark: FilePreviewSyntaxHighlighter.isDark(foregroundColor: themeForegroundColor),
+            fallbackColor: themeForegroundColor
+        )
     }
 
     static func applyTheme(
@@ -115,6 +128,97 @@ struct FilePreviewTextEditor<PanelModel>: NSViewRepresentable where PanelModel: 
 enum FilePreviewTextEditorLayout {
     static let textContainerInset = NSSize(width: 12, height: 10)
     static let lineFragmentPadding: CGFloat = 0
+}
+
+fileprivate struct FilePreviewSyntaxHighlightSignature: Equatable {
+    let contentHash: Int
+    let isDark: Bool
+}
+
+fileprivate struct FilePreviewSyntaxHighlightRun {
+    let range: NSRange
+    let color: NSColor
+}
+
+/// Produces per-range foreground colors for the File Preview text editor using
+/// Highlightr (highlight.js via JavaScriptCore). Only foreground colors are
+/// emitted; font/size stays owned by the editor's zoom machinery, so applying a
+/// run set never fights `applyCurrentPreviewFont()`.
+fileprivate enum FilePreviewSyntaxHighlighter {
+    /// Files longer than this are left unhighlighted. Highlightr tokenizes the
+    /// whole document synchronously and the editor re-highlights on content
+    /// change, so cap well below the editor's 16 MB text ceiling to keep load
+    /// and per-keystroke recompute responsive on large files.
+    static let maximumHighlightableLength = 120_000
+
+    private static let highlightr: Highlightr? = Highlightr()
+
+    /// Light foreground text implies a dark theme background.
+    static func isDark(foregroundColor: NSColor) -> Bool {
+        foregroundColor.markdownOpaqueSRGB.isLightColor
+    }
+
+    static func colorRuns(for text: String, fileURL: URL, isDark: Bool) -> [FilePreviewSyntaxHighlightRun]? {
+        guard !text.isEmpty, text.utf16.count <= maximumHighlightableLength else { return nil }
+        guard let language = language(for: fileURL), let highlightr else { return nil }
+        highlightr.setTheme(to: isDark ? "atom-one-dark" : "atom-one-light")
+        guard let highlighted = highlightr.highlight(text, as: language, fastRender: true) else { return nil }
+        var runs: [FilePreviewSyntaxHighlightRun] = []
+        highlighted.enumerateAttribute(
+            .foregroundColor,
+            in: NSRange(location: 0, length: highlighted.length)
+        ) { value, range, _ in
+            guard let color = value as? NSColor else { return }
+            runs.append(FilePreviewSyntaxHighlightRun(range: range, color: color))
+        }
+        return runs
+    }
+
+    /// Maps a file to a highlight.js language name, or nil when unknown so the
+    /// caller leaves the file as plain text.
+    static func language(for url: URL) -> String? {
+        let ext = url.pathExtension.lowercased()
+        if !ext.isEmpty, let mapped = extensionLanguageMap[ext] { return mapped }
+        return filenameLanguageMap[url.lastPathComponent.lowercased()]
+    }
+
+    private static let extensionLanguageMap: [String: String] = [
+        "swift": "swift",
+        "m": "objectivec", "mm": "objectivec", "h": "objectivec", "hpp": "cpp",
+        "c": "c", "cc": "cpp", "cpp": "cpp", "cxx": "cpp",
+        "js": "javascript", "mjs": "javascript", "cjs": "javascript", "jsx": "javascript",
+        "ts": "typescript", "tsx": "typescript",
+        "py": "python", "pyi": "python",
+        "rb": "ruby", "go": "go", "rs": "rust",
+        "java": "java", "kt": "kotlin", "kts": "kotlin",
+        "cs": "csharp", "php": "php", "scala": "scala", "swiftinterface": "swift",
+        "sh": "bash", "bash": "bash", "zsh": "bash", "fish": "bash",
+        "json": "json", "jsonc": "json",
+        "yml": "yaml", "yaml": "yaml", "toml": "ini", "ini": "ini", "cfg": "ini", "conf": "ini",
+        "xml": "xml", "plist": "xml", "svg": "xml", "html": "xml", "htm": "xml",
+        "css": "css", "scss": "scss", "sass": "scss", "less": "less",
+        "sql": "sql", "graphql": "graphql", "gql": "graphql",
+        "md": "markdown", "markdown": "markdown", "mdx": "markdown",
+        "dockerfile": "dockerfile", "make": "makefile", "mk": "makefile",
+        "lua": "lua", "pl": "perl", "pm": "perl", "r": "r", "dart": "dart",
+        "ex": "elixir", "exs": "elixir", "erl": "erlang", "clj": "clojure",
+        "hs": "haskell", "vim": "vim", "diff": "diff", "patch": "diff",
+        "gradle": "gradle", "groovy": "groovy", "proto": "protobuf",
+        "tf": "terraform", "hcl": "terraform", "env": "bash",
+    ]
+
+    private static let filenameLanguageMap: [String: String] = [
+        "dockerfile": "dockerfile",
+        "makefile": "makefile",
+        "gnumakefile": "makefile",
+        "cmakelists.txt": "cmake",
+        ".gitignore": "bash",
+        ".zshrc": "bash",
+        ".bashrc": "bash",
+        ".bash_profile": "bash",
+        "package.json": "json",
+        "tsconfig.json": "json",
+    ]
 }
 
 extension SavingTextView {
@@ -225,6 +329,8 @@ final class SavingTextView: NSTextView {
     private var previewFontSize: CGFloat = 13
     private var pendingEditorShortcutChordPrefix: ShortcutStroke?
     private var fontMagnificationObserver: GlobalFontMagnificationChangeObserver?
+    private var highlightSignature: FilePreviewSyntaxHighlightSignature?
+    private var cachedHighlightRuns: [FilePreviewSyntaxHighlightRun]?
 
     convenience init() {
         self.init(frame: .zero, textContainer: nil)
@@ -329,6 +435,32 @@ final class SavingTextView: NSTextView {
         let nextFont = GlobalFontMagnification.monospacedSystemFont(ofSize: previewFontSize, weight: .regular)
         font = nextFont
         typingAttributes[.font] = nextFont
+    }
+
+    /// Applies syntax-highlight foreground colors over the current text. Recomputes
+    /// only when the content or theme changes (cached otherwise), because the
+    /// editor's `applyTheme` resets `textColor` on every SwiftUI update and would
+    /// otherwise wipe the coloring. Unknown languages and oversized files are
+    /// left as the fallback (already-applied) plain color.
+    func applyFilePreviewSyntaxHighlight(fileURL: URL, isDark: Bool, fallbackColor: NSColor) {
+        guard let textStorage else { return }
+        let content = string
+        let signature = FilePreviewSyntaxHighlightSignature(contentHash: content.hashValue, isDark: isDark)
+        if highlightSignature != signature {
+            highlightSignature = signature
+            cachedHighlightRuns = FilePreviewSyntaxHighlighter.colorRuns(
+                for: content,
+                fileURL: fileURL,
+                isDark: isDark
+            )
+        }
+        guard let runs = cachedHighlightRuns, !runs.isEmpty else { return }
+        let length = textStorage.length
+        textStorage.beginEditing()
+        for run in runs where NSMaxRange(run.range) <= length {
+            textStorage.addAttribute(.foregroundColor, value: run.color, range: run.range)
+        }
+        textStorage.endEditing()
     }
 
     private func clearPendingShortcutChordPrefixes() {
