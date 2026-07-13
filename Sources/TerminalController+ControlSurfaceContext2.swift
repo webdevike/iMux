@@ -292,6 +292,7 @@ extension TerminalController {
                 case "codex": providerID = .codex
                 case "claude", "claudecode": providerID = .claude
                 case "opencode": providerID = .opencode
+                case "eva": providerID = .eva
                 default: return .invalidProvider(rawValue: providerRaw)
                 }
             }

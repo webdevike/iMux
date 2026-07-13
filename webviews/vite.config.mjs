@@ -77,6 +77,28 @@ export default defineConfig({
           ) {
             return "diff-vendor";
           }
+          // Eva panel vendor: Mantine, code-highlight/highlight.js, and
+          // react-markdown's remark/micromark/mdast/hast/unist tree. All are
+          // exclusive to the Eva surface, so collapse them into one lazy chunk
+          // that parallels diff-vendor and loads only when the eva surface mounts.
+          if (
+            id.includes("/@mantine/") ||
+            id.includes("/highlight.js/") ||
+            id.includes("/react-markdown/") ||
+            id.includes("/remark-gfm/") ||
+            id.includes("/remark-parse/") ||
+            id.includes("/remark-rehype/") ||
+            id.includes("/micromark") ||
+            id.includes("/mdast-util-") ||
+            id.includes("/hast-util-") ||
+            id.includes("/unist-util-") ||
+            id.includes("/unified/") ||
+            id.includes("/vfile") ||
+            id.includes("/property-information/") ||
+            id.includes("/hastscript/")
+          ) {
+            return "eva-vendor";
+          }
           // Framework code both surfaces share. Pinning it to a stable `vendor`
           // chunk name keeps the shared chunk from being renamed (and rehashed)
           // whenever an unrelated shared module changes.

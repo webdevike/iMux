@@ -15064,7 +15064,7 @@ struct CMUXCLI {
               --workspace <id|ref|index>  Target workspace (default: $CMUX_WORKSPACE_ID)
               --window <id|ref|index>     Window context for workspace/pane refs and indexes
               --url <url>                 URL for browser surfaces
-              --provider <codex|claude|opencode>
+              --provider <codex|claude|opencode|eva>
                                            Provider for agent-session surfaces (default: codex)
               --renderer <react|solid>    Renderer for agent-session surfaces (default: react)
               --working-directory <path>   Working directory for terminal and agent surfaces
