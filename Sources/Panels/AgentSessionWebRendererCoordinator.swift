@@ -72,6 +72,15 @@ final class AgentSessionWebRendererCoordinator: NSObject, WKNavigationDelegate, 
 
         let configuration = WKWebViewConfiguration()
         configuration.suppressesIncrementalRendering = false
+        // The React webviews bundle (agent-session.html) loads `main.mjs` as an ES
+        // module, which statically imports sibling chunks (./chunks/vendor.mjs, …).
+        // Under `loadFileURL`, WKWebView gives file:// pages a null origin and
+        // denies those cross-file module fetches ("Cross-origin script load denied
+        // by CORS policy"), leaving every React agent panel blank. Grant file-URL
+        // read/CORS access so bundled module imports resolve. Local bundled assets
+        // only; nothing here loads remote content.
+        configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        configuration.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
         configuration.userContentController.addScriptMessageHandler(
             self,
             contentWorld: .page,
