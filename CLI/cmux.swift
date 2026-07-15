@@ -5213,9 +5213,9 @@ struct CMUXCLI {
 
     // MARK: - Panel Commands
 
-    /// `cmux panel prompt <spec.json|->` — opens an interactive panel in a
-    /// browser split and blocks until the user submits or cancels (or the
-    /// timeout elapses). On submit, prints the edited value JSON to stdout.
+    /// `cmux panel <prompt|open|update|wait|read|close>` — interactive panels.
+    /// `prompt` blocks until submit/cancel and prints the edited value;
+    /// `open`/`update`/`wait`/`read`/`close` manage a live panel by id.
     private func runPanelCommand(
         commandArgs: [String],
         client: SocketClient,
@@ -5229,33 +5229,16 @@ struct CMUXCLI {
         let (focusOpt, argsAfterFocus) = parseOption(argsAfterSurface, name: "--focus")
         let (titleOpt, argsAfterTitle) = parseOption(argsAfterFocus, name: "--title")
         let (timeoutOpt, argsAfterTimeout) = parseOption(argsAfterTitle, name: "--timeout")
-        args = argsAfterTimeout
+        let (panelIdOpt, argsAfterPanelId) = parseOption(argsAfterTimeout, name: "--id")
+        args = argsAfterPanelId
 
-        let usage = "Usage: cmux panel prompt <spec.json|-> [--title <text>] [--timeout <seconds>] [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>] [--focus <true|false>]"
-        guard let subcommand = args.first, subcommand.lowercased() == "prompt" else {
-            throw CLIError(message: "Unknown panel subcommand '\(args.first ?? "")'. \(usage)")
+        let usage = "Usage: cmux panel prompt <spec.json|-> | open <spec.json|-> [--id <panel-id>] | update <panel-id> <spec.json|-> | wait <panel-id> | read <panel-id> | close <panel-id>  [--title <text>] [--timeout <seconds>] [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>] [--focus <true|false>]"
+        guard let subcommand = args.first?.lowercased() else {
+            throw CLIError(message: "panel requires a subcommand. \(usage)")
         }
         let positional = Array(args.dropFirst())
         if let unknownFlag = positional.first(where: { $0.hasPrefix("-") && $0 != "-" }) {
-            throw CLIError(message: "panel prompt: unknown flag '\(unknownFlag)'. \(usage)")
-        }
-        guard positional.count == 1, let specArg = positional.first else {
-            throw CLIError(message: "panel prompt requires exactly one spec argument (a JSON file path or '-' for stdin). \(usage)")
-        }
-
-        let specData: Data
-        if specArg == "-" {
-            specData = FileHandle.standardInput.readDataToEndOfFile()
-        } else {
-            let specPath = resolvePath(specArg)
-            guard let fileData = FileManager.default.contents(atPath: specPath) else {
-                throw CLIError(message: "panel prompt: cannot read spec file: \(specPath)")
-            }
-            specData = fileData
-        }
-        guard let specObject = try? JSONSerialization.jsonObject(with: specData),
-              let spec = specObject as? [String: Any] else {
-            throw CLIError(message: "panel prompt: spec must be a JSON object")
+            throw CLIError(message: "panel \(subcommand): unknown flag '\(unknownFlag)'. \(usage)")
         }
 
         let timeoutSeconds: Int
@@ -5269,47 +5252,144 @@ struct CMUXCLI {
             timeoutSeconds = 3600
         }
 
-        var params: [String: Any] = ["spec": spec, "timeout_seconds": timeoutSeconds]
-        if let titleOpt {
-            params["title"] = titleOpt
-        }
-        if let surfaceRaw = surfaceOpt {
-            if let surface = try normalizeSurfaceHandle(surfaceRaw, client: client) {
-                params["surface_id"] = surface
+        func readSpec(_ specArg: String, context: String) throws -> [String: Any] {
+            let specData: Data
+            if specArg == "-" {
+                specData = FileHandle.standardInput.readDataToEndOfFile()
+            } else {
+                let specPath = resolvePath(specArg)
+                guard let fileData = FileManager.default.contents(atPath: specPath) else {
+                    throw CLIError(message: "panel \(context): cannot read spec file: \(specPath)")
+                }
+                specData = fileData
             }
-        }
-        let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
-        if let workspaceRaw {
-            if let workspace = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
-                params["workspace_id"] = workspace
+            guard let specObject = try? JSONSerialization.jsonObject(with: specData),
+                  let spec = specObject as? [String: Any] else {
+                throw CLIError(message: "panel \(context): spec must be a JSON object")
             }
+            return spec
         }
-        if let windowRaw = windowOpt {
-            if let window = try normalizeWindowHandle(windowRaw, client: client) {
-                params["window_id"] = window
-            }
-        }
-        try applyFocusOption(focusOpt, defaultValue: true, to: &params)
 
-        let payload = try client.sendV2(
-            method: "panel.prompt",
-            params: params,
-            responseTimeout: TimeInterval(timeoutSeconds) + 30
-        )
-
-        if jsonOutput {
-            print(jsonString(formatIDs(payload, mode: idFormat)))
-            return
+        func applyTargeting(_ params: inout [String: Any]) throws {
+            if let surfaceRaw = surfaceOpt {
+                if let surface = try normalizeSurfaceHandle(surfaceRaw, client: client) {
+                    params["surface_id"] = surface
+                }
+            }
+            let workspaceRaw = workspaceOpt ?? (windowOpt == nil ? ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"] : nil)
+            if let workspaceRaw {
+                if let workspace = try normalizeWorkspaceHandle(workspaceRaw, client: client) {
+                    params["workspace_id"] = workspace
+                }
+            }
+            if let windowRaw = windowOpt {
+                if let window = try normalizeWindowHandle(windowRaw, client: client) {
+                    params["window_id"] = window
+                }
+            }
+            try applyFocusOption(focusOpt, defaultValue: true, to: &params)
         }
-        switch (payload["status"] as? String) ?? "unknown" {
-        case "submitted":
-            print(jsonString(payload["value"] ?? [String: Any]()))
-        case "cancelled":
-            throw CLIError(message: "panel cancelled by user")
-        case "timeout":
-            throw CLIError(message: "panel timed out waiting for user input")
+
+        func printOutcome(_ payload: [String: Any], waitingContext: String) throws {
+            if jsonOutput {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+                return
+            }
+            switch (payload["status"] as? String) ?? "unknown" {
+            case "submitted":
+                print(jsonString(payload["value"] ?? [String: Any]()))
+            case "cancelled":
+                throw CLIError(message: "panel \(waitingContext) cancelled by user")
+            case "timeout":
+                throw CLIError(message: "panel \(waitingContext) timed out waiting for user input")
+            default:
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            }
+        }
+
+        switch subcommand {
+        case "prompt":
+            guard positional.count == 1, let specArg = positional.first else {
+                throw CLIError(message: "panel prompt requires exactly one spec argument (a JSON file path or '-' for stdin). \(usage)")
+            }
+            var params: [String: Any] = ["spec": try readSpec(specArg, context: "prompt"), "timeout_seconds": timeoutSeconds]
+            if let titleOpt { params["title"] = titleOpt }
+            try applyTargeting(&params)
+            let payload = try client.sendV2(
+                method: "panel.prompt",
+                params: params,
+                responseTimeout: TimeInterval(timeoutSeconds) + 30
+            )
+            try printOutcome(payload, waitingContext: "prompt")
+
+        case "open":
+            guard positional.count == 1, let specArg = positional.first else {
+                throw CLIError(message: "panel open requires exactly one spec argument (a JSON file path or '-' for stdin). \(usage)")
+            }
+            var params: [String: Any] = ["spec": try readSpec(specArg, context: "open")]
+            if let titleOpt { params["title"] = titleOpt }
+            if let panelIdOpt { params["panel_id"] = panelIdOpt }
+            try applyTargeting(&params)
+            let payload = try client.sendV2(method: "panel.open", params: params)
+            if jsonOutput {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                let panelId = (payload["panel_id"] as? String) ?? "unknown"
+                let surfaceText = formatHandle(payload, kind: "surface", idFormat: idFormat) ?? "unknown"
+                print("OK panel=\(panelId) surface=\(surfaceText)")
+            }
+
+        case "update":
+            guard positional.count == 2 else {
+                throw CLIError(message: "panel update requires <panel-id> <spec.json|->. \(usage)")
+            }
+            var params: [String: Any] = [
+                "panel_id": positional[0],
+                "spec": try readSpec(positional[1], context: "update")
+            ]
+            if let titleOpt { params["title"] = titleOpt }
+            let payload = try client.sendV2(method: "panel.update", params: params)
+            if jsonOutput {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                print("OK panel=\((payload["panel_id"] as? String) ?? positional[0]) updated")
+            }
+
+        case "wait":
+            guard positional.count == 1, let panelId = positional.first else {
+                throw CLIError(message: "panel wait requires <panel-id>. \(usage)")
+            }
+            let payload = try client.sendV2(
+                method: "panel.wait",
+                params: ["panel_id": panelId, "timeout_seconds": timeoutSeconds],
+                responseTimeout: TimeInterval(timeoutSeconds) + 30
+            )
+            try printOutcome(payload, waitingContext: "wait")
+
+        case "read":
+            guard positional.count == 1, let panelId = positional.first else {
+                throw CLIError(message: "panel read requires <panel-id>. \(usage)")
+            }
+            let payload = try client.sendV2(method: "panel.read", params: ["panel_id": panelId])
+            if jsonOutput {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                print(jsonString(payload["value"] ?? NSNull()))
+            }
+
+        case "close":
+            guard positional.count == 1, let panelId = positional.first else {
+                throw CLIError(message: "panel close requires <panel-id>. \(usage)")
+            }
+            let payload = try client.sendV2(method: "panel.close", params: ["panel_id": panelId])
+            if jsonOutput {
+                print(jsonString(formatIDs(payload, mode: idFormat)))
+            } else {
+                print("OK panel=\((payload["panel_id"] as? String) ?? panelId) closed")
+            }
+
         default:
-            print(jsonString(formatIDs(payload, mode: idFormat)))
+            throw CLIError(message: "Unknown panel subcommand '\(subcommand)'. \(usage)")
         }
     }
 
@@ -16076,21 +16156,33 @@ struct CMUXCLI {
         case "panel":
             return """
             Usage: cmux panel prompt <spec.json|-> [options]
+                   cmux panel open <spec.json|-> [--id <panel-id>] [options]
+                   cmux panel update <panel-id> <spec.json|-> [--title <text>]
+                   cmux panel wait <panel-id> [--timeout <seconds>]
+                   cmux panel read <panel-id>
+                   cmux panel close <panel-id>
 
-            Open an interactive panel (rendered from a JSON UI spec) in a browser
-            split and BLOCK until the user submits or cancels. On submit, the
-            edited value is printed to stdout as JSON. Cancel and timeout exit
-            non-zero. Designed for agent handoffs: propose a structure, let the
-            user edit it, read the result back.
+            Interactive panels: a JSON UI spec rendered as editable components in
+            a browser split. `prompt` is one-shot — it BLOCKS until the user
+            submits or cancels, prints the edited value to stdout, and closes the
+            panel. `open` starts a LIVE panel that survives multiple rounds:
+            `wait` blocks for the next submit, `update` pushes a revised spec
+            into the running panel, `read` returns the last submission, `close`
+            ends it. Cancel and timeout exit non-zero.
 
             Spec (v1): { "title": <string>, "body": [<block>...] } where a block is
               { "type": "markdown", "text": <string> }
               { "type": "tree", "id": <string>, "nodes": [<node>...],
                 "features": ["rename", "move", "toggle"] }
+              { "type": "section", "id": <string>, "heading"?: <string>,
+                "markdown": <string>, "status"?: "proposed|approved|rejected|none",
+                "decidable"?: <bool>, "commentable"?: <bool> }
             Tree nodes: { "id", "label", "children"?, "included"?, "note"? }
-            Submit value: { <treeId>: { "nodes": [<edited nodes>] } }
+            Submit value: { <treeId>: { "nodes": [...] },
+                            <sectionId>: { "status": ..., "comment"?: ... } }
 
             Options:
+              --id <panel-id>              Live panel id for `open` (default: generated)
               --title <text>               Panel title (default: spec.title)
               --timeout <seconds>          Wait limit, 1-86400 (default: 3600)
               --workspace <id|ref|index>   Target workspace (default: $CMUX_WORKSPACE_ID)
@@ -16100,8 +16192,10 @@ struct CMUXCLI {
 
             Examples:
               cmux panel prompt proposal.json
-              echo '{"body":[{"type":"markdown","text":"# Hi"}]}' | cmux panel prompt -
-              cmux panel prompt refactor.json --title "Proposed layout" --timeout 900
+              cmux panel open plan.json --id plan --title "Refactor plan"
+              cmux panel wait plan --timeout 900        # → user's decisions as JSON
+              cmux panel update plan plan-v2.json       # revise rejected sections
+              cmux panel close plan
             """
         default:
             return nil
@@ -34490,7 +34584,7 @@ export default CMUXSessionRestore;
 
           markdown [open] <path> [--focus <true|false>] (open markdown file in formatted viewer panel with live reload)
           diff [patch-file|-] [--source <unstaged|staged|branch|last-turn>] [--cwd <path>] [--base <ref>] [--focus <true|false>] [--no-focus] [--title <text>] [--layout <split|unified>] [--font-size <points>] (open patch input or git source in a browser split)
-          panel prompt <spec.json|-> [--title <text>] [--timeout <seconds>] [--focus <true|false>] (open interactive panel from a JSON UI spec; blocks until submit/cancel and prints the edited value)
+          panel <prompt|open|update|wait|read|close> [spec.json|-] [--id <panel-id>] [--title <text>] [--timeout <seconds>] (interactive panels from a JSON UI spec; prompt blocks for one answer, open/wait/update iterate on a live panel)
 
           browser [--surface <id|ref|index> | <surface>] <subcommand> ...
           browser disable | enable | status

@@ -82,7 +82,9 @@ final class PanelPromptURLSchemeHandler: NSObject, WKURLSchemeHandler {
                 "Content-Length": String(data.count),
                 "Cache-Control": "no-store",
                 // The shell is fully inlined; nothing external may load.
-                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:"
+                // 'unsafe-eval' is required so panel.update can push new specs
+                // into the page world via evaluateJavaScript.
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval'; img-src data:; font-src data:"
             ]
         ) ?? URLResponse(
             url: requestURL,

@@ -3,7 +3,7 @@
 
 export type Spec = { title?: string; body: Block[] };
 
-export type Block = MarkdownBlock | TreeBlock;
+export type Block = MarkdownBlock | TreeBlock | SectionBlock;
 
 export type MarkdownBlock = { type: "markdown"; text: string };
 
@@ -30,21 +30,47 @@ export type TreeNode = {
   note?: string;
 };
 
-export type PanelInitValue = { title: string; spec: Spec };
+/** Reviewable plan-doc section: markdown body plus a user decision + note. */
+export type SectionStatus = "none" | "proposed" | "approved" | "rejected";
 
-/** Submit payload: edited tree(s) keyed by tree block id. */
-export type SubmitValue = Record<string, { nodes: TreeNode[] }>;
+export type SectionBlock = {
+  type: "section";
+  /** Result key inside the submit payload. */
+  id: string;
+  heading?: string;
+  /** Body, rendered with the shared markdown renderer. */
+  markdown: string;
+  /** Initial status; defaults to "proposed". */
+  status?: SectionStatus;
+  /** Defaults to true; renders the Approve / Reject control. */
+  decidable?: boolean;
+  /** Defaults to true; renders the comment textarea. */
+  commentable?: boolean;
+};
+
+/** How the app drives the panel: prompt closes on submit, live keeps iterating. */
+export type PanelMode = "prompt" | "live";
+
+export type PanelInitValue = { title: string; spec: Spec; mode: PanelMode; panelId: string };
+
+export type TreeResult = { nodes: TreeNode[] };
+/** Comment is omitted when empty or whitespace-only. */
+export type SectionResult = { status: SectionStatus; comment?: string };
+
+/** Submit payload keyed by block id: trees as edited nodes, sections as decisions. */
+export type SubmitValue = Record<string, TreeResult | SectionResult>;
 
 // Internal sanitized representation. Unknown block types are preserved as
 // placeholders so a newer agent-side schema degrades visibly instead of
 // silently dropping content.
-export type SanitizedBlock = MarkdownBlock | TreeBlock | UnknownBlock;
+export type SanitizedBlock = MarkdownBlock | TreeBlock | SectionBlock | UnknownBlock;
 export type UnknownBlock = { type: "unknown"; originalType: string };
 export type SanitizedSpec = { title?: string; body: SanitizedBlock[] };
 
 const TREE_FEATURES: readonly TreeFeature[] = ["rename", "move", "toggle"];
+const SECTION_STATUSES: readonly SectionStatus[] = ["none", "proposed", "approved", "rejected"];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -86,6 +112,23 @@ function sanitizeBlock(raw: unknown, index: number): SanitizedBlock | null {
     };
     if (Array.isArray(raw.features)) {
       block.features = TREE_FEATURES.filter((feature) => (raw.features as unknown[]).includes(feature));
+    }
+    return block;
+  }
+  if (raw.type === "section") {
+    const id = typeof raw.id === "string" && raw.id.length > 0 ? raw.id : `section-${index}`;
+    // Defaults are resolved here so rendering and submit collection never
+    // re-derive them: status "proposed", both controls enabled.
+    const block: SectionBlock = {
+      type: "section",
+      id,
+      markdown: typeof raw.markdown === "string" ? raw.markdown : "",
+      status: SECTION_STATUSES.includes(raw.status as SectionStatus) ? (raw.status as SectionStatus) : "proposed",
+      decidable: raw.decidable !== false,
+      commentable: raw.commentable !== false,
+    };
+    if (typeof raw.heading === "string" && raw.heading.length > 0) {
+      block.heading = raw.heading;
     }
     return block;
   }

@@ -53,22 +53,30 @@ final class PanelPromptBridge: NSObject, WKScriptMessageHandlerWithReply {
                 replyHandler(Self.errorReply(code: "not_allowed", userMessage: "Panel session expired"), nil)
                 return
             }
-            replyHandler(["ok": true, "value": ["title": session.title, "spec": session.spec]], nil)
+            replyHandler([
+                "ok": true,
+                "value": [
+                    "title": session.title,
+                    "spec": session.spec,
+                    "mode": session.mode.rawValue,
+                    "panelId": session.panelId
+                ]
+            ], nil)
 
         case "panel.submit":
             guard let value = params["value"] else {
                 replyHandler(Self.errorReply(code: "invalid_message", userMessage: "panel.submit requires params.value"), nil)
                 return
             }
-            guard PanelPromptCoordinator.shared.resolve(token: token, outcome: .submitted(value)) else {
-                replyHandler(Self.errorReply(code: "already_resolved", userMessage: "Panel already resolved"), nil)
+            guard PanelPromptCoordinator.shared.deliver(token: token, event: .submitted(value)) else {
+                replyHandler(Self.errorReply(code: "already_resolved", userMessage: "Panel session ended"), nil)
                 return
             }
             replyHandler(["ok": true, "value": [String: Any]()], nil)
 
         case "panel.cancel":
-            guard PanelPromptCoordinator.shared.resolve(token: token, outcome: .cancelled) else {
-                replyHandler(Self.errorReply(code: "already_resolved", userMessage: "Panel already resolved"), nil)
+            guard PanelPromptCoordinator.shared.deliver(token: token, event: .cancelled) else {
+                replyHandler(Self.errorReply(code: "already_resolved", userMessage: "Panel session ended"), nil)
                 return
             }
             replyHandler(["ok": true, "value": [String: Any]()], nil)

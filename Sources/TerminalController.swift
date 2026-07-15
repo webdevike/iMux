@@ -1298,6 +1298,16 @@ class TerminalController {
             return v2Result(id: request.id, v2BrowserDownloadWaitOnSocketWorker(params: request.params))
         case "panel.prompt":
             return v2Result(id: request.id, v2PanelPromptOnSocketWorker(params: request.params))
+        case "panel.open":
+            return v2Result(id: request.id, v2PanelOpenOnSocketWorker(params: request.params))
+        case "panel.wait":
+            return v2Result(id: request.id, v2PanelWaitOnSocketWorker(params: request.params))
+        case "panel.update":
+            return v2Result(id: request.id, v2PanelUpdateOnSocketWorker(params: request.params))
+        case "panel.read":
+            return v2Result(id: request.id, v2PanelReadOnSocketWorker(params: request.params))
+        case "panel.close":
+            return v2Result(id: request.id, v2PanelCloseOnSocketWorker(params: request.params))
         case "browser.navigate", "browser.back", "browser.forward", "browser.reload",
              "browser.snapshot", "browser.eval", "browser.wait", "browser.screenshot",
              "browser.click", "browser.dblclick", "browser.hover", "browser.focus",
@@ -2493,6 +2503,11 @@ class TerminalController {
             "markdown.open",
             "browser.open_split",
             "panel.prompt",
+            "panel.open",
+            "panel.wait",
+            "panel.update",
+            "panel.read",
+            "panel.close",
             "browser.navigate",
             "browser.back",
             "browser.forward",
@@ -7092,7 +7107,7 @@ class TerminalController {
         }
     }
 
-    private nonisolated func v2BrowserEval(params: [String: Any]) -> V2CallResult {
+    nonisolated func v2BrowserEval(params: [String: Any]) -> V2CallResult {
         guard let script = v2String(params, "script") else {
             return .err(code: "invalid_params", message: "Missing script", data: nil)
         }

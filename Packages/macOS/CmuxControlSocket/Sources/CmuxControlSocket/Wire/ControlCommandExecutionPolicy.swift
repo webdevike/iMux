@@ -79,10 +79,17 @@ public enum ControlCommandExecutionPolicy: Sendable, Equatable {
         "feed.question.reply",
         "feed.exit_plan.reply",
         "browser.download.wait",
-        // `panel.prompt` parks its socket-worker thread until the interactive
-        // panel page submits/cancels (or the wait times out); on the main
-        // actor that would freeze the app for the full wait.
+        // `panel.prompt` / `panel.wait` park their socket-worker thread until
+        // the interactive panel page submits/cancels (or the wait times out);
+        // on the main actor that would freeze the app for the full wait. The
+        // rest of the panel.* family shares the lane so the whole namespace
+        // dispatches uniformly (open/update hop to main internally).
         "panel.prompt",
+        "panel.open",
+        "panel.wait",
+        "panel.update",
+        "panel.read",
+        "panel.close",
         "browser.profiles.list",
         "browser.profiles.create",
         "browser.profiles.rename",
