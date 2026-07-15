@@ -4,6 +4,7 @@ enum AgentSessionProviderID: String, CaseIterable, Codable, Identifiable, Sendab
     case codex
     case claude
     case opencode
+    case eva
 
     var id: String { rawValue }
 
@@ -15,6 +16,8 @@ enum AgentSessionProviderID: String, CaseIterable, Codable, Identifiable, Sendab
             return String(localized: "agentSession.provider.claude", defaultValue: "Claude Code")
         case .opencode:
             return String(localized: "agentSession.provider.opencode", defaultValue: "OpenCode")
+        case .eva:
+            return String(localized: "agentSession.provider.eva", defaultValue: "Eva")
         }
     }
 
@@ -26,6 +29,8 @@ enum AgentSessionProviderID: String, CaseIterable, Codable, Identifiable, Sendab
             return "claude"
         case .opencode:
             return "opencode"
+        case .eva:
+            return "omp"
         }
     }
 
@@ -43,6 +48,8 @@ enum AgentSessionProviderID: String, CaseIterable, Codable, Identifiable, Sendab
             ]
         case .opencode:
             return ["serve", "--hostname", "127.0.0.1", "--port", "0", "--print-logs"]
+        case .eva:
+            return ["--mode", "rpc"]
         }
     }
 
@@ -54,12 +61,14 @@ enum AgentSessionProviderID: String, CaseIterable, Codable, Identifiable, Sendab
             return "stdio-jsonl"
         case .opencode:
             return "http-loopback"
+        case .eva:
+            return "stdio-jsonl"
         }
     }
 
     var shouldAutoStartSession: Bool {
         switch self {
-        case .codex, .opencode:
+        case .codex, .opencode, .eva:
             return true
         case .claude:
             return false

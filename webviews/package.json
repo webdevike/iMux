@@ -15,16 +15,22 @@
     "react-doctor:ci": "react-doctor . --full --no-score --fail-on none"
   },
   "dependencies": {
+    "@mantine/code-highlight": "9.4.1",
+    "@mantine/core": "9.4.1",
+    "@mantine/hooks": "9.4.1",
     "@pierre/diffs": "1.2.7",
     "@pierre/trees": "1.0.0-beta.4",
     "@tanstack/react-router": "1.170.11",
     "@vitejs/plugin-react": "^5.1.2",
+    "highlight.js": "11.11.1",
     "prosemirror-commands": "^1.7.1",
     "prosemirror-model": "^1.25.7",
     "prosemirror-state": "^1.4.4",
     "prosemirror-view": "^1.41.8",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
     "solid-js": "^1.9.13",
     "vite": "^7.2.7"
   },

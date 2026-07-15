@@ -1,0 +1,243 @@
+/* SHELL-02 vibrancy: the full-bleed layers are a SEMI-opaque #1f2023 tint so the
+   macOS NSVisualEffectView (under-window vibrancy, tauri.conf windowEffects) reads
+   through subtly — yet stays dark when the effect is absent or Reduce-Transparency
+   is on, so the surface is never bright. index.html keeps an opaque #1f2023 as the
+   pre-mount first-paint guard. (rgba(31,32,35) == #1f2023 == --mantine-color-dark-7.) */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background-color: rgba(31, 32, 35, 0.85);
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: rgba(31, 32, 35, 0.85);
+}
+
+/* Overlay-titlebar strip: slots the presence orb at the right (D-05). The orb is
+   pointer-events:none so it never captures a pointer. */
+.titlebar {
+  flex: 0 0 48px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-left: 80px;
+  padding-right: 16px;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Chat surface (plan 01-04): readable column, transcript fills the space
+   under the drag strip, composer pinned to the bottom. */
+.chat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 16px 16px;
+}
+
+.chat-transcript {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 4px 16px;
+}
+
+.chat-greeting {
+  text-align: center;
+  font-size: 1.1rem;
+  color: var(--mantine-color-dark-1, #a6a7ab);
+}
+
+/* SHELL-02: empty-state hero — the reused PresenceOrb scaled via --orb-size
+   above the time-of-day greeting, centered calm in the empty transcript space. */
+.chat-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  min-height: 340px;
+  --orb-size: 96px;
+}
+
+/* Calm violet presence in the hero: the idle orb reads as Eva's accent with a
+   soft glow (no motion), overriding the tiny dim titlebar idle treatment via the
+   ancestor selector — reduced-motion is unaffected (idle never animates). */
+.chat-hero .presence-orb {
+  opacity: 0.9;
+  background-color: var(--mantine-primary-color-filled);
+  box-shadow: 0 0 44px 6px color-mix(in srgb, var(--mantine-primary-color-filled) 30%, transparent);
+}
+
+/* Subtle role distinction: user turns sit right in a dark pill,
+   Eva's text flows plain and full-width, system notices center dimmed. */
+.chat-message-user {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background-color: color-mix(in srgb, var(--mantine-color-violet-6, #7048e8) 22%, var(--mantine-color-dark-5, #2e2f33));
+}
+
+.chat-message-assistant {
+  align-self: flex-start;
+}
+
+.chat-message-system {
+  align-self: center;
+}
+
+.chat-composer {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.chat-input {
+  flex: 1;
+}
+
+/* Consecutive tool rows cluster in one ToolGroup between assistant text (D-02);
+   the wrapper lets the group span the readable column width. */
+.chat-tools {
+  align-self: stretch;
+}
+
+/* Resume divider (OMP-03): a subtle labeled rule marking where the prior
+   transcript ends and live turns begin. */
+.chat-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+}
+
+.chat-divider::before,
+.chat-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background-color: var(--mantine-color-dark-4, #373a40);
+}
+
+/* In-flight turn marked failed, not dropped (OMP-04): the half-streamed reply
+   stays visible with a subtle interrupted marker. */
+.chat-incomplete {
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* Thinking row (D-07): a pending assistant row between send and the first
+   delta/tool row — three shimmering dots, replaced in place once content lands. */
+.chat-thinking {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+}
+
+.chat-thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--mantine-color-dark-2, #909296);
+  animation: chat-thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-thinking-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-thinking-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Inline needs-input responder (D-08): a compact prompt for blocking
+   confirm/input dialogs, sitting just above the composer. */
+.chat-responder {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-top: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--mantine-color-dark-4, #373a40);
+  background-color: var(--mantine-color-dark-6, #25262b);
+}
+
+.chat-responder-form {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-responder-input {
+  flex: 1;
+}
+
+/* Persistent fatal notice (OMP-04): omp gave up restarting — offer a manual
+   Retry; the composer stays disabled until a ready recovery clears it. */
+.chat-fatal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-top: 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--mantine-color-error) 40%, transparent);
+  background-color: color-mix(in srgb, var(--mantine-color-error) 12%, transparent);
+}
+
+/* Transient reconnect banner (OMP-04): shown while omp is exited/restarting and
+   cleared automatically on the next ready — neutral, not the fatal error tint. */
+.chat-reconnecting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-top: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--mantine-color-default-border);
+  background-color: var(--mantine-color-default-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-thinking-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}

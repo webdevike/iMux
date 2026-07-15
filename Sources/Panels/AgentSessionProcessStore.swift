@@ -138,6 +138,10 @@ final class AgentSessionProcessStore {
             try await writeClaudeStreamJSON(text, to: session.inputWriter)
         case .opencode:
             try await postOpenCodePrompt(text, session: session)
+        case .eva:
+            var data = Data(text.utf8)
+            data.append(0x0A)
+            try await session.inputWriter.write(data)
         }
     }
 

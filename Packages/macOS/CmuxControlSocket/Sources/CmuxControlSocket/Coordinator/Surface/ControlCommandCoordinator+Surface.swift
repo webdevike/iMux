@@ -514,7 +514,7 @@ extension ControlCommandCoordinator {
         case .invalidProvider(let rawValue):
             return .err(
                 code: "invalid_params",
-                message: "Invalid provider (codex|claude|opencode)",
+                message: "Invalid provider (codex|claude|opencode|eva)",
                 data: .object(["provider": .string(rawValue)])
             )
         case .invalidRenderer(let rawValue):

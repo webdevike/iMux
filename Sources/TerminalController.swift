@@ -4723,13 +4723,15 @@ class TerminalController {
                 providerID = .claude
             case "opencode":
                 providerID = .opencode
+            case "eva":
+                providerID = .eva
             default:
                 return (
                     .codex,
                     .react,
                     .err(
                         code: "invalid_params",
-                        message: "Invalid provider (codex|claude|opencode)",
+                        message: "Invalid provider (codex|claude|opencode|eva)",
                         data: ["provider": providerRaw]
                     )
                 )
